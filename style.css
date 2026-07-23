@@ -1,0 +1,181 @@
+:root {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --text: #14161a;
+  --text-dim: #6b7280;
+  --accent: #2563eb;
+  --good: #16a34a;
+  --bad: #dc2626;
+  --border: #e5e7eb;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b0d12;
+    --surface: #161a22;
+    --text: #f2f3f5;
+    --text-dim: #9aa1ac;
+    --accent: #5b9bff;
+    --good: #34d058;
+    --bad: #ff6b6b;
+    --border: #262b35;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+main {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 24px 20px 48px;
+  padding-top: max(24px, env(safe-area-inset-top));
+  padding-bottom: max(48px, env(safe-area-inset-bottom));
+}
+
+header h1 {
+  font-size: 1.3rem;
+  margin: 0 0 2px;
+}
+
+.order-label {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+}
+
+.hero {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.stat {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 18px 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.stat--primary {
+  flex: 1.4;
+}
+
+.stat-value {
+  font-size: 2.4rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.stat--primary .stat-value {
+  color: var(--accent);
+}
+
+.stat-label {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  margin-top: 4px;
+}
+
+.deltas {
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.delta-card {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 14px 16px;
+}
+
+.delta-value {
+  display: block;
+  font-size: 1.3rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.delta-value.positive { color: var(--good); }
+.delta-value.negative { color: var(--bad); }
+
+.delta-label {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+}
+
+.chart-section {
+  margin-top: 28px;
+}
+
+.chart-section h2 {
+  font-size: 1rem;
+  margin: 0 0 10px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+#chart {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 12px;
+}
+
+#chart svg { display: block; width: 100%; height: auto; }
+
+.chart-caption {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  margin: 8px 4px 0;
+}
+
+.summary {
+  margin-top: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.summary strong { font-variant-numeric: tabular-nums; }
+
+footer {
+  margin-top: 28px;
+  text-align: center;
+}
+
+footer p {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  margin: 4px 0;
+}
+
+footer a {
+  color: var(--accent);
+}
+
+.empty-state {
+  text-align: center;
+  color: var(--text-dim);
+  padding: 24px 12px;
+}

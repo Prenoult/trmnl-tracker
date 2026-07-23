@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>File d'attente TRMNL</title>
+<meta name="description" content="Suivi quotidien de votre position dans la file d'attente TRMNL" />
+
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="icon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="icon.svg" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="File TRMNL" />
+<meta name="theme-color" content="#0b0d12" />
+
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<main>
+  <header>
+    <h1>File d'attente TRMNL</h1>
+    <p class="order-label">Commande #<span id="order-number">…</span></p>
+  </header>
+
+  <section class="hero">
+    <div class="stat stat--primary">
+      <span class="stat-value" id="position">–</span>
+      <span class="stat-label">votre position</span>
+    </div>
+    <div class="stat">
+      <span class="stat-value" id="total">–</span>
+      <span class="stat-label">commandes au total</span>
+    </div>
+  </section>
+
+  <section class="deltas" id="deltas">
+    <div class="delta-card">
+      <span class="delta-value" id="delta-position">–</span>
+      <span class="delta-label">places gagnées hier</span>
+    </div>
+    <div class="delta-card">
+      <span class="delta-value" id="delta-total">–</span>
+      <span class="delta-label">commandes ajoutées</span>
+    </div>
+  </section>
+
+  <section class="chart-section">
+    <h2>Progression</h2>
+    <div id="chart"></div>
+    <p class="chart-caption" id="chart-caption"></p>
+  </section>
+
+  <section class="summary" id="summary"></section>
+
+  <footer>
+    <p id="last-updated"></p>
+    <p class="source">Source : <a href="https://trmnl.com/order-tracker" target="_blank" rel="noreferrer">trmnl.com/order-tracker</a> — mise à jour automatique chaque jour</p>
+  </footer>
+</main>
+
+<script src="app.js"></script>
+<script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("sw.js"));
+}
+</script>
+</body>
+</html>
