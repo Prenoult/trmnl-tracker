@@ -1,59 +1,75 @@
 # TRMNL Queue Tracker
 
-Suivi quotidien de la position dans la file d'attente TRMNL (commande #51230),
-avec historique et progression.
+Daily tracking of your position in the TRMNL queue (order #51230), with history
+and progress.
 
-## Comment ça marche
+## How it works
 
-- [`scripts/scrape.mjs`](scripts/scrape.mjs) reproduit les 3 requêtes que fait
-  un vrai navigateur sur `trmnl.com/order-tracker` (la page ne contient la
-  position qu'après un submit de formulaire déclenché par du JS côté client —
-  un simple GET ne suffit pas). Le résultat est ajouté/mis à jour dans
-  [`data/history.json`](data/history.json), une entrée par jour.
-- Un workflow GitHub Actions ([`.github/workflows/track.yml`](.github/workflows/track.yml))
-  lance ce script chaque jour à 07:00 UTC et commit le fichier mis à jour.
-- [`index.html`](index.html) est une mini appli web (PWA) qui lit
-  `data/history.json` et affiche : position actuelle, places gagnées/perdues
-  depuis la veille, commandes ajoutées à la file, courbe de progression, et
-  une estimation du nombre de jours restants au rythme actuel.
+- [`scripts/scrape.mjs`](scripts/scrape.mjs) replays the 3 requests a real
+  browser makes against `trmnl.com/order-tracker` (the page only contains the
+  position after a form submit triggered by client-side JS — a plain GET is not
+  enough). The result is appended to / updated in
+  [`data/history.json`](data/history.json), one entry per day.
+- A GitHub Actions workflow ([`.github/workflows/track.yml`](.github/workflows/track.yml))
+  runs that script every day at 07:00 UTC and commits the updated file.
+- [`index.html`](index.html) is a small web app (PWA) that reads
+  `data/history.json` and shows: current position, queue size, places gained/lost
+  since the previous snapshot, orders added to the queue, an estimated shipping
+  date and a progress chart. Its UI is in French.
 
-Aucun serveur à faire tourner : tout est statique, hébergeable gratuitement
-sur GitHub Pages.
+No server to run: everything is static and can be hosted for free on GitHub
+Pages.
 
-## Déploiement (5 minutes)
+## How the numbers are derived
 
-1. Crée un dépôt GitHub (public ou privé) et pousse ce dossier dedans :
+TRMNL publishes the **current** queue size (`in a queue of N orders`), not a
+running total: it shrinks as soon as more orders ship than come in. Comparing two
+totals therefore yields the net balance (added − shipped), which can be negative,
+rather than the orders added. The app reconstructs the real figures from the two
+series:
+
+- **places gained** = `position(previous) − position(current)` — the orders that
+  left the queue ahead of us (it is FIFO).
+- **orders added** = `queue delta + places gained`.
+- **estimated shipping date** = `snapshot date + position / rate`, where the rate
+  is the places gained per day over the last 7 days (window configurable through
+  `RATE_WINDOW_DAYS` in [`app.js`](app.js)). A sliding window rather than the
+  average since day one, so the estimate stays honest if the shipping cadence
+  changes.
+
+## Deployment (5 minutes)
+
+1. Create a GitHub repository (public or private) and push this folder to it:
 
    ```bash
    cd ~/dev/trmnl-tracker
    git init
    git add -A
-   git commit -m "Initial commit"
+   git commit -m "chore: initial commit"
    git branch -M main
-   git remote add origin https://github.com/<ton-user>/trmnl-tracker.git
+   git remote add origin https://github.com/<your-user>/trmnl-tracker.git
    git push -u origin main
    ```
 
-2. Dans les réglages du dépôt (**Settings → Pages**), choisis **Deploy from a
-   branch**, branche `main`, dossier `/ (root)`.
-3. Dans **Settings → Actions → General → Workflow permissions**, sélectionne
-   **Read and write permissions** (nécessaire pour que le workflow puisse
-   commit `data/history.json`).
-4. L'appli sera accessible sur `https://<ton-user>.github.io/trmnl-tracker/`.
-   Ouvre ce lien sur ton téléphone, puis **Partager → Sur l'écran d'accueil**
-   (Safari) pour l'installer comme une vraie appli.
-5. Le workflow tourne automatiquement chaque jour. Pour lancer un relevé
-   immédiatement sans attendre : onglet **Actions** du dépôt → *Track queue
-   position* → **Run workflow**.
+2. In the repository settings (**Settings → Pages**), pick **Deploy from a
+   branch**, branch `main`, folder `/ (root)`.
+3. In **Settings → Actions → General → Workflow permissions**, select
+   **Read and write permissions** (required for the workflow to commit
+   `data/history.json`).
+4. The app will be available at `https://<your-user>.github.io/trmnl-tracker/`.
+   Open that link on your phone, then **Share → Add to Home Screen** (Safari) to
+   install it as a real app.
+5. The workflow runs automatically every day. To take a snapshot right away
+   without waiting: **Actions** tab → *Track queue position* → **Run workflow**.
 
-## Changer de commande
+## Tracking a different order
 
-Édite `ORDER_NUMBER` dans [`.github/workflows/track.yml`](.github/workflows/track.yml)
-et dans [`app.js`](app.js) (`const ORDER_NUMBER = "..."`).
+Edit `ORDER_NUMBER` in [`.github/workflows/track.yml`](.github/workflows/track.yml)
+and in [`app.js`](app.js) (`const ORDER_NUMBER = "..."`).
 
-## Tester en local
+## Running locally
 
 ```bash
-node scripts/scrape.mjs   # met à jour data/history.json
-python3 -m http.server 8080   # puis ouvre http://localhost:8080
+node scripts/scrape.mjs   # updates data/history.json
+python3 -m http.server 8080   # then open http://localhost:8080
 ```

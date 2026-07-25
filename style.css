@@ -119,6 +119,45 @@ header h1 {
   font-size: 0.78rem;
 }
 
+.eta {
+  margin-top: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.eta-label {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+.eta-value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Intl renders "vendredi 21 août 2026": uppercase the first word only, since
+   French does not capitalise every word the way `capitalize` would. */
+.eta-value::first-letter {
+  text-transform: uppercase;
+}
+
+.eta-sub {
+  color: var(--text-dim);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
 .chart-section {
   margin-top: 28px;
 }

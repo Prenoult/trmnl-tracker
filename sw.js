@@ -1,5 +1,5 @@
 // Minimal offline cache so the app still opens (with last-known data) without a connection.
-const CACHE = "trmnl-tracker-v1";
+const CACHE = "trmnl-tracker-v2";
 const ASSETS = ["./", "index.html", "style.css", "app.js", "manifest.json", "icon.svg", "data/history.json"];
 
 self.addEventListener("install", (event) => {
