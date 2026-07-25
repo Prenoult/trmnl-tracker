@@ -145,12 +145,24 @@ function renderChart(history) {
   const plotH = h - top - bottom;
   const lastIndex = history.length - 1;
 
+  // The projection runs to position 0, so the axis has to reach 0 too, and the
+  // x-axis has to span real time rather than snapshot indexes — otherwise the
+  // future date has nowhere to sit (and missed days plot as regular intervals).
+  const estimate = shippingEstimate(history);
+  const projection = estimate?.date ?? null;
+  const startDate = parseDay(history[0].date);
+  const lastDate = parseDay(history[lastIndex].date);
+  const endDate = projection ?? lastDate;
+  const span = endDate - startDate || 1;
+
   const positions = history.map((p) => p.position);
-  const ticks = niceTicks(Math.min(...positions), Math.max(...positions));
+  const ticks = niceTicks(projection ? 0 : Math.min(...positions), Math.max(...positions));
   const lo = ticks[0];
   const hi = ticks[ticks.length - 1];
 
-  const x = (i) => left + (i / lastIndex) * plotW;
+  const xAt = (date) => left + ((date - startDate) / span) * plotW;
+  const xs = history.map((p) => xAt(parseDay(p.date)));
+  const x = (i) => xs[i];
   const y = (v) => top + (1 - (v - lo) / (hi - lo)) * plotH;
 
   const line = history
@@ -166,14 +178,26 @@ function renderChart(history) {
     )
     .join("");
 
-  // Three dates at most: the ends always, the middle once there is room for it.
-  const dateIndexes =
-    history.length >= 5 ? [0, Math.round(lastIndex / 2), lastIndex] : [0, lastIndex];
-  const dateLabels = dateIndexes
-    .map((i) => {
-      const anchor = i === 0 ? "start" : i === lastIndex ? "end" : "middle";
-      return `<text class="chart-axis" x="${x(i).toFixed(1)}" y="${h - 8}" text-anchor="${anchor}">${dateFmt.format(parseDay(history[i].date))}</text>`;
-    })
+  // Dashed, de-emphasised and unfilled: this segment is a forecast, not data.
+  const projectionMark = projection
+    ? `<path class="chart-projection" d="M${x(lastIndex).toFixed(1)},${y(history[lastIndex].position).toFixed(1)} L${xAt(projection).toFixed(1)},${y(0).toFixed(1)}" />` +
+      `<circle class="chart-target" cx="${xAt(projection).toFixed(1)}" cy="${y(0).toFixed(1)}" r="3.5" />`
+    : "";
+
+  // Both ends always; the last snapshot only where it will not collide with them.
+  const dateMarks = [
+    { date: startDate, at: xAt(startDate), anchor: "start" },
+    ...(xAt(lastDate) > left + plotW * 0.25 && xAt(lastDate) < left + plotW * 0.75
+      ? [{ date: lastDate, at: xAt(lastDate), anchor: "middle" }]
+      : []),
+    ...(projection ? [{ date: projection, at: xAt(projection), anchor: "end" }] : []),
+    ...(projection ? [] : [{ date: lastDate, at: xAt(lastDate), anchor: "end" }]),
+  ];
+  const dateLabels = dateMarks
+    .map(
+      (m) =>
+        `<text class="chart-axis" x="${m.at.toFixed(1)}" y="${h - 8}" text-anchor="${m.anchor}">${dateFmt.format(m.date)}</text>`
+    )
     .join("");
 
   // Past ~20 snapshots a dot per day turns the line into a bead string.
@@ -190,10 +214,13 @@ function renderChart(history) {
 
   const endX = x(lastIndex);
   const endY = y(history[lastIndex].position);
+  // With a projection the last snapshot sits far from the right edge, so the
+  // value label flips to the free side instead of hanging over the forecast.
+  const labelLeft = endX > left + plotW * 0.6;
 
   el.innerHTML = `
     <svg viewBox="0 0 ${w} ${h}" role="img" tabindex="0"
-      aria-label="Position dans la file du ${dateFmt.format(parseDay(history[0].date))} au ${dateFmt.format(parseDay(history[lastIndex].date))}, de ${fmt.format(history[0].position)} à ${fmt.format(history[lastIndex].position)}. Données détaillées dans le tableau sous le graphique.">
+      aria-label="Position dans la file du ${dateFmt.format(startDate)} au ${dateFmt.format(lastDate)}, de ${fmt.format(history[0].position)} à ${fmt.format(history[lastIndex].position)}.${projection ? ` Projection en pointillés jusqu'à la position 0 le ${dateFmt.format(projection)}.` : ""} Données détaillées dans le tableau sous le graphique.">
       <defs>
         <linearGradient id="chart-area" x1="0" y1="0" x2="0" y2="1">
           <stop class="chart-area-from" offset="0%" />
@@ -202,12 +229,13 @@ function renderChart(history) {
       </defs>
       <g class="chart-grid">${grid}</g>
       <path class="chart-fill" d="${area}" />
+      ${projectionMark}
       <path class="chart-line" d="${line}" />
       ${dots}
       <line class="chart-crosshair" y1="${top}" y2="${top + plotH}" />
       <circle class="chart-cursor" r="4.5" />
       <circle class="chart-end" cx="${endX.toFixed(1)}" cy="${endY.toFixed(1)}" r="4.5" />
-      <text class="chart-end-label" x="${(endX - 7).toFixed(1)}" y="${Math.max(endY - 13, top + 11).toFixed(1)}" text-anchor="end">#${fmt.format(history[lastIndex].position)}</text>
+      <text class="chart-end-label" x="${(labelLeft ? endX - 7 : endX + 7).toFixed(1)}" y="${Math.max(endY - 13, top + 11).toFixed(1)}" text-anchor="${labelLeft ? "end" : "start"}">#${fmt.format(history[lastIndex].position)}</text>
       ${dateLabels}
       <rect class="chart-hit" x="${left}" y="${top}" width="${plotW}" height="${plotH}" />
     </svg>
@@ -217,6 +245,10 @@ function renderChart(history) {
   wireChartHover(el, history, { x, y, toClientRatio: (i) => x(i) / w });
   renderChartTable(history);
   tableWrap.hidden = false;
+
+  document.getElementById("chart-caption").textContent =
+    "Position dans la file — plus bas = plus proche de l'expédition." +
+    (projection ? " En pointillés : projection jusqu'à votre tour." : "");
 }
 
 // Crosshair + tooltip. The readout snaps to the nearest snapshot, so the reader
@@ -372,10 +404,6 @@ async function main() {
       `<strong>${fmt.format(totalAdded)} nouvelle${plural(totalAdded)} commande${plural(totalAdded)}</strong> ` +
       `rejoignai${plural(totalAdded, "en")}t la file.`;
   }
-
-  // The axis now carries the dates, so the caption only explains the direction.
-  document.getElementById("chart-caption").textContent =
-    "Position dans la file — plus bas = plus proche de l'expédition";
 
   document.getElementById("last-updated").textContent =
     `Dernière mise à jour : ${dateFmt.format(parseDay(latest.date))}`;

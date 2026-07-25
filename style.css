@@ -217,6 +217,26 @@ header h1 {
   vector-effect: non-scaling-stroke;
 }
 
+/* The forecast: same hue, but dashed and stepped back so it never reads as
+   observed data. Dashing is reserved for this — grid and axes stay solid. */
+.chart-projection {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 2 6;
+  stroke-linecap: round;
+  opacity: 0.5;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Hollow, unlike the filled snapshot markers: nothing was measured here. */
+.chart-target {
+  fill: var(--surface);
+  stroke: var(--accent);
+  stroke-width: 2;
+  opacity: 0.75;
+}
+
 /* Markers carry a surface-coloured ring rather than a border, so they stay
    legible where they sit on the line. */
 .chart-dot { fill: var(--accent); stroke: var(--surface); stroke-width: 1.5; }
