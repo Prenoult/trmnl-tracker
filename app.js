@@ -3,14 +3,25 @@ const ORDER_NUMBER = "51230";
 // The UI is French; keep every Intl formatter on one locale.
 const LOCALE = "fr-FR";
 
+// Window (in days) used to estimate how fast the queue is moving.
+const RATE_WINDOW_DAYS = 7;
+
 const fmt = new Intl.NumberFormat(LOCALE);
+const rateFmt = new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 1 });
 const dateFmt = new Intl.DateTimeFormat(LOCALE, { day: "numeric", month: "short" });
+const longDateFmt = new Intl.DateTimeFormat(LOCALE, {
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+});
 
 // Dates in history.json are plain UTC days ("2026-07-25"), so parse them as UTC:
 // formatting them in a timezone west of Greenwich would otherwise shift every
 // label back by a day.
 const parseDay = (s) => new Date(`${s}T00:00:00Z`);
 const daysBetween = (a, b) => Math.round((parseDay(b) - parseDay(a)) / 86400000);
+const addDays = (date, n) => new Date(date.getTime() + n * 86400000);
 // French only pluralises from two upwards, so zero stays singular ("0 place").
 const plural = (n, s = "s") => (Math.abs(n) > 1 ? s : "");
 
@@ -39,6 +50,58 @@ function setDelta(el, value, { invert = false, neutral = false } = {}) {
   const bad = !neutral && (invert ? value > 0 : value < 0);
   el.textContent = `${value > 0 ? "+" : ""}${fmt.format(value)}`;
   el.className = "delta-value" + (good ? " positive" : bad ? " negative" : "");
+}
+
+// Rate over the last few days rather than the average since day one: it stays
+// honest if TRMNL's shipping cadence speeds up or slows down.
+function shippingEstimate(history) {
+  if (history.length < 2) return null;
+
+  const latest = history[history.length - 1];
+  const start = history[Math.max(0, history.length - 1 - RATE_WINDOW_DAYS)];
+  const spanDays = daysBetween(start.date, latest.date);
+  if (spanDays <= 0) return null;
+
+  const rate = (start.position - latest.position) / spanDays;
+  if (rate <= 0) return { rate, spanDays, daysLeft: null, date: null };
+
+  const daysLeft = Math.ceil(latest.position / rate);
+  return {
+    rate,
+    spanDays,
+    daysLeft,
+    // Beyond a 10-year horizon the projection is noise; drop the date.
+    date: daysLeft > 3650 ? null : addDays(parseDay(latest.date), daysLeft),
+  };
+}
+
+function renderEta(history) {
+  const dateEl = document.getElementById("eta-date");
+  const subEl = document.getElementById("eta-sub");
+  const est = shippingEstimate(history);
+
+  if (!est) {
+    dateEl.textContent = "–";
+    subEl.textContent = "Estimation disponible dès le deuxième relevé.";
+    return;
+  }
+
+  const window =
+    est.spanDays === 1 ? "depuis hier" : `sur les ${est.spanDays} derniers jours`;
+
+  if (!est.date) {
+    dateEl.textContent = "Indéterminée";
+    subEl.textContent =
+      est.rate <= 0
+        ? `La file n'a pas avancé ${window}.`
+        : `Au rythme actuel (${rateFmt.format(est.rate)} place${plural(est.rate)}/jour), l'échéance dépasse 10 ans.`;
+    return;
+  }
+
+  dateEl.textContent = longDateFmt.format(est.date);
+  subEl.textContent =
+    `Dans environ ${fmt.format(est.daysLeft)} jour${plural(est.daysLeft)}, ` +
+    `au rythme de ${rateFmt.format(est.rate)} place${plural(est.rate)}/jour observé ${window}.`;
 }
 
 function renderChart(history) {
@@ -115,6 +178,7 @@ async function main() {
       : `depuis le ${dateFmt.format(parseDay(previous.date))}`;
   for (const el of document.querySelectorAll(".delta-since")) el.textContent = sinceLabel;
 
+  renderEta(history);
   renderChart(history);
 
   const totalGain = first.position - latest.position;
@@ -122,24 +186,17 @@ async function main() {
     .slice(1)
     .reduce((sum, entry, i) => sum + movement(history[i], entry).added, 0);
   const daysTracked = Math.max(1, daysBetween(first.date, latest.date));
-  const dailyRate = totalGain / daysTracked;
   const summaryEl = document.getElementById("summary");
 
   if (history.length < 2) {
     summaryEl.innerHTML = `Premier relevé enregistré le ${dateFmt.format(parseDay(latest.date))} — la progression s'affichera à partir de demain.`;
   } else {
-    let etaLine = "";
-    if (dailyRate > 0) {
-      const daysLeft = Math.ceil(latest.position / dailyRate);
-      etaLine = ` Au rythme actuel (<strong>${dailyRate.toFixed(1)} places/jour</strong>), encore environ <strong>${fmt.format(daysLeft)} jour${plural(daysLeft)}</strong> avant votre tour.`;
-    }
     summaryEl.innerHTML =
       `Depuis le ${dateFmt.format(parseDay(first.date))}, vous avez gagné ` +
       `<strong>${fmt.format(totalGain)} place${plural(totalGain)}</strong> en ` +
       `<strong>${daysTracked} jour${plural(daysTracked)}</strong> de suivi, pendant que ` +
       `<strong>${fmt.format(totalAdded)} nouvelle${plural(totalAdded)} commande${plural(totalAdded)}</strong> ` +
-      `rejoignai${plural(totalAdded, "en")}t la file.` +
-      etaLine;
+      `rejoignai${plural(totalAdded, "en")}t la file.`;
   }
 
   document.getElementById("chart-caption").textContent =

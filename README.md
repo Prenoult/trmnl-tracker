@@ -14,8 +14,8 @@ and progress.
   runs that script every day at 07:00 UTC and commits the updated file.
 - [`index.html`](index.html) is a small web app (PWA) that reads
   `data/history.json` and shows: current position, queue size, places gained/lost
-  since the previous snapshot, orders added to the queue, a progress chart, and
-  an estimate of how many days are left at the current rate. Its UI is in French.
+  since the previous snapshot, orders added to the queue, an estimated shipping
+  date and a progress chart. Its UI is in French.
 
 No server to run: everything is static and can be hosted for free on GitHub
 Pages.
@@ -31,6 +31,11 @@ series:
 - **places gained** = `position(previous) − position(current)` — the orders that
   left the queue ahead of us (it is FIFO).
 - **orders added** = `queue delta + places gained`.
+- **estimated shipping date** = `snapshot date + position / rate`, where the rate
+  is the places gained per day over the last 7 days (window configurable through
+  `RATE_WINDOW_DAYS` in [`app.js`](app.js)). A sliding window rather than the
+  average since day one, so the estimate stays honest if the shipping cadence
+  changes.
 
 ## Deployment (5 minutes)
 
