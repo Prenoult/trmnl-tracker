@@ -55,6 +55,23 @@
     <h2>Progression</h2>
     <div id="chart"></div>
     <p class="chart-caption" id="chart-caption"></p>
+    <details class="chart-data" id="chart-data" hidden>
+      <summary>Voir les données</summary>
+      <div class="chart-data-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Date</th>
+              <th scope="col">Position</th>
+              <th scope="col">File</th>
+              <th scope="col">Places</th>
+              <th scope="col">Ajoutées</th>
+            </tr>
+          </thead>
+          <tbody id="chart-table-body"></tbody>
+        </table>
+      </div>
+    </details>
   </section>
 
   <section class="summary" id="summary"></section>

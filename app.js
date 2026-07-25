@@ -104,40 +104,214 @@ function renderEta(history) {
     `au rythme de ${rateFmt.format(est.rate)} place${plural(est.rate)}/jour observé ${window}.`;
 }
 
+// Chart geometry, in viewBox units. The left gutter holds the y-axis values and
+// the bottom band the dates, so no label sits outside the drawn box.
+const CHART = { w: 440, h: 188, top: 14, right: 14, bottom: 26, left: 46 };
+
+// Axis steps rounded to 1/2/2.5/5 × 10ⁿ, so ticks read as round numbers rather
+// than as the raw min and max of the data.
+function niceTicks(min, max, count = 4) {
+  // A flat series would collapse the scale to a single tick and divide by zero.
+  if (max === min) {
+    min -= 1;
+    max += 1;
+  }
+
+  const raw = (max - min) / (count - 1);
+  const magnitude = 10 ** Math.floor(Math.log10(raw));
+  // Positions count whole orders, so never label a fractional rank.
+  const step = Math.max([1, 2, 2.5, 5, 10].map((m) => m * magnitude).find((s) => s >= raw), 1);
+
+  // Round outwards on both ends: a domain stopping short of the extremes would
+  // push the line outside the plot and clip it.
+  const first = Math.floor(min / step) * step;
+  const last = Math.ceil(max / step) * step;
+  const ticks = [];
+  for (let v = first; v <= last + step / 2; v += step) ticks.push(v);
+  return ticks;
+}
+
 function renderChart(history) {
   const el = document.getElementById("chart");
+  const tableWrap = document.getElementById("chart-data");
   if (history.length < 2) {
     el.innerHTML = '<p class="empty-state">Revenez demain pour voir la courbe de progression.</p>';
+    tableWrap.hidden = true;
     return;
   }
 
-  const w = 440;
-  const h = 160;
-  const pad = 8;
+  const { w, h, top, right, bottom, left } = CHART;
+  const plotW = w - left - right;
+  const plotH = h - top - bottom;
+  const lastIndex = history.length - 1;
+
   const positions = history.map((p) => p.position);
-  const max = Math.max(...positions);
-  const min = Math.min(...positions);
-  const range = max - min || 1;
+  const ticks = niceTicks(Math.min(...positions), Math.max(...positions));
+  const lo = ticks[0];
+  const hi = ticks[ticks.length - 1];
 
-  const x = (i) => pad + (i / (history.length - 1)) * (w - pad * 2);
-  const y = (v) => pad + (1 - (v - min) / range) * (h - pad * 2);
+  const x = (i) => left + (i / lastIndex) * plotW;
+  const y = (v) => top + (1 - (v - lo) / (hi - lo)) * plotH;
 
-  const points = history.map((p, i) => `${x(i)},${y(p.position)}`).join(" ");
-  const areaPoints = `${x(0)},${h - pad} ${points} ${x(history.length - 1)},${h - pad}`;
+  const line = history
+    .map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.position).toFixed(1)}`)
+    .join(" ");
+  const area = `${line} L${x(lastIndex).toFixed(1)},${top + plotH} L${left},${top + plotH} Z`;
+
+  const grid = ticks
+    .map(
+      (v) =>
+        `<line x1="${left}" y1="${y(v).toFixed(1)}" x2="${left + plotW}" y2="${y(v).toFixed(1)}" />` +
+        `<text class="chart-axis" x="${left - 8}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${fmt.format(v)}</text>`
+    )
+    .join("");
+
+  // Three dates at most: the ends always, the middle once there is room for it.
+  const dateIndexes =
+    history.length >= 5 ? [0, Math.round(lastIndex / 2), lastIndex] : [0, lastIndex];
+  const dateLabels = dateIndexes
+    .map((i) => {
+      const anchor = i === 0 ? "start" : i === lastIndex ? "end" : "middle";
+      return `<text class="chart-axis" x="${x(i).toFixed(1)}" y="${h - 8}" text-anchor="${anchor}">${dateFmt.format(parseDay(history[i].date))}</text>`;
+    })
+    .join("");
+
+  // Past ~20 snapshots a dot per day turns the line into a bead string.
+  const dots =
+    history.length <= 20
+      ? history
+          .slice(0, -1)
+          .map(
+            (p, i) =>
+              `<circle class="chart-dot" cx="${x(i).toFixed(1)}" cy="${y(p.position).toFixed(1)}" r="2.5" />`
+          )
+          .join("")
+      : "";
+
+  const endX = x(lastIndex);
+  const endY = y(history[lastIndex].position);
 
   el.innerHTML = `
-    <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
-      <polygon points="${areaPoints}" fill="var(--accent)" opacity="0.12" />
-      <polyline points="${points}" fill="none" stroke="var(--accent)" stroke-width="2.5"
-        stroke-linecap="round" stroke-linejoin="round" />
-      ${history
-        .map(
-          (p, i) =>
-            `<circle cx="${x(i)}" cy="${y(p.position)}" r="3" fill="var(--accent)"></circle>`
-        )
-        .join("")}
+    <svg viewBox="0 0 ${w} ${h}" role="img" tabindex="0"
+      aria-label="Position dans la file du ${dateFmt.format(parseDay(history[0].date))} au ${dateFmt.format(parseDay(history[lastIndex].date))}, de ${fmt.format(history[0].position)} à ${fmt.format(history[lastIndex].position)}. Données détaillées dans le tableau sous le graphique.">
+      <defs>
+        <linearGradient id="chart-area" x1="0" y1="0" x2="0" y2="1">
+          <stop class="chart-area-from" offset="0%" />
+          <stop class="chart-area-to" offset="100%" />
+        </linearGradient>
+      </defs>
+      <g class="chart-grid">${grid}</g>
+      <path class="chart-fill" d="${area}" />
+      <path class="chart-line" d="${line}" />
+      ${dots}
+      <line class="chart-crosshair" y1="${top}" y2="${top + plotH}" />
+      <circle class="chart-cursor" r="4.5" />
+      <circle class="chart-end" cx="${endX.toFixed(1)}" cy="${endY.toFixed(1)}" r="4.5" />
+      <text class="chart-end-label" x="${(endX - 7).toFixed(1)}" y="${Math.max(endY - 13, top + 11).toFixed(1)}" text-anchor="end">#${fmt.format(history[lastIndex].position)}</text>
+      ${dateLabels}
+      <rect class="chart-hit" x="${left}" y="${top}" width="${plotW}" height="${plotH}" />
     </svg>
+    <div class="chart-tooltip" hidden><span class="tt-date"></span><strong class="tt-value"></strong><span class="tt-meta"></span></div>
   `;
+
+  wireChartHover(el, history, { x, y, toClientRatio: (i) => x(i) / w });
+  renderChartTable(history);
+  tableWrap.hidden = false;
+}
+
+// Crosshair + tooltip. The readout snaps to the nearest snapshot, so the reader
+// aims at a date rather than at a 2px line; arrow keys drive the same readout.
+function wireChartHover(el, history, { x, y, toClientRatio }) {
+  const svg = el.querySelector("svg");
+  const crosshair = el.querySelector(".chart-crosshair");
+  const cursor = el.querySelector(".chart-cursor");
+  const tooltip = el.querySelector(".chart-tooltip");
+  const dateEl = tooltip.querySelector(".tt-date");
+  const valueEl = tooltip.querySelector(".tt-value");
+  const metaEl = tooltip.querySelector(".tt-meta");
+  let active = null;
+
+  function show(i) {
+    active = i;
+    const entry = history[i];
+    const previous = i > 0 ? movement(history[i - 1], entry) : null;
+
+    crosshair.setAttribute("x1", x(i));
+    crosshair.setAttribute("x2", x(i));
+    cursor.setAttribute("cx", x(i));
+    cursor.setAttribute("cy", y(entry.position));
+    svg.classList.add("is-active");
+
+    // textContent throughout: never build this markup by string concatenation.
+    dateEl.textContent = dateFmt.format(parseDay(entry.date));
+    valueEl.textContent = `#${fmt.format(entry.position)}`;
+    metaEl.textContent =
+      (previous ? `${previous.gained > 0 ? "+" : ""}${fmt.format(previous.gained)} place${plural(previous.gained)} · ` : "") +
+      `file de ${fmt.format(entry.total)}`;
+
+    // On a card this narrow the bubble is wide enough to sit on top of the point
+    // it describes, so park it in the half the pointer is not in.
+    tooltip.hidden = false;
+    const half = tooltip.offsetWidth / 2;
+    tooltip.style.left =
+      toClientRatio(i) < 0.5 ? `${el.clientWidth - half - 4}px` : `${half + 4}px`;
+  }
+
+  function hide() {
+    active = null;
+    svg.classList.remove("is-active");
+    tooltip.hidden = true;
+  }
+
+  function nearestIndex(clientX) {
+    const rect = svg.getBoundingClientRect();
+    const viewX = ((clientX - rect.left) / rect.width) * CHART.w;
+    let best = 0;
+    for (let i = 1; i < history.length; i++) {
+      if (Math.abs(x(i) - viewX) < Math.abs(x(best) - viewX)) best = i;
+    }
+    return best;
+  }
+
+  svg.addEventListener("pointermove", (e) => show(nearestIndex(e.clientX)));
+  svg.addEventListener("pointerdown", (e) => show(nearestIndex(e.clientX)));
+  svg.addEventListener("pointerleave", hide);
+  svg.addEventListener("blur", hide);
+  svg.addEventListener("keydown", (e) => {
+    const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+    if (step) {
+      e.preventDefault();
+      const from = active ?? (step > 0 ? -1 : history.length);
+      show(Math.min(history.length - 1, Math.max(0, from + step)));
+    } else if (e.key === "Escape") {
+      hide();
+    }
+  });
+}
+
+// The table view keeps every value reachable without hovering.
+function renderChartTable(history) {
+  const body = document.getElementById("chart-table-body");
+  body.replaceChildren();
+
+  for (let i = history.length - 1; i >= 0; i--) {
+    const entry = history[i];
+    const previous = i > 0 ? movement(history[i - 1], entry) : null;
+    const row = document.createElement("tr");
+
+    for (const value of [
+      dateFmt.format(parseDay(entry.date)),
+      `#${fmt.format(entry.position)}`,
+      fmt.format(entry.total),
+      previous ? `${previous.gained > 0 ? "+" : ""}${fmt.format(previous.gained)}` : "–",
+      previous ? `${previous.added > 0 ? "+" : ""}${fmt.format(previous.added)}` : "–",
+    ]) {
+      const cell = document.createElement("td");
+      cell.textContent = value;
+      row.append(cell);
+    }
+    body.append(row);
+  }
 }
 
 async function main() {
@@ -199,8 +373,9 @@ async function main() {
       `rejoignai${plural(totalAdded, "en")}t la file.`;
   }
 
+  // The axis now carries the dates, so the caption only explains the direction.
   document.getElementById("chart-caption").textContent =
-    `${dateFmt.format(parseDay(first.date))} → ${dateFmt.format(parseDay(latest.date))} · position dans la file (plus bas = plus proche)`;
+    "Position dans la file — plus bas = plus proche de l'expédition";
 
   document.getElementById("last-updated").textContent =
     `Dernière mise à jour : ${dateFmt.format(parseDay(latest.date))}`;
