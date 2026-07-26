@@ -13,6 +13,10 @@ const LOCALE = "fr-FR";
 const fmt = new Intl.NumberFormat(LOCALE);
 const rateFmt = new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 1 });
 const dateFmt = new Intl.DateTimeFormat(LOCALE, { day: "numeric", month: "short" });
+// Abbreviated French months carry a trailing period ("10 sept."), which collides
+// with the full stop ending a sentence. Prose gets the unabbreviated month; the
+// axis labels and the table, where space is tight, keep the short one.
+const proseDateFmt = new Intl.DateTimeFormat(LOCALE, { day: "numeric", month: "long" });
 const longDateFmt = new Intl.DateTimeFormat(LOCALE, {
   weekday: "long",
   day: "numeric",
@@ -73,7 +77,22 @@ function renderEta(history) {
   dateEl.textContent = longDateFmt.format(est.date);
   subEl.textContent =
     `Dans environ ${fmt.format(est.daysLeft)} jour${plural(est.daysLeft)}, ` +
-    `au rythme de ${rateFmt.format(est.rate)} place${plural(est.rate)}/jour observé ${window}.`;
+    `au rythme de ${rateFmt.format(est.rate)} place${plural(est.rate)}/jour observé ${window}.` +
+    spread(est.range);
+}
+
+// The date above is a single day computed from a fitted line; the relevés are
+// nowhere near that regular. Naming how far the fit itself can slide keeps the
+// headline from reading as a promise.
+function spread(range) {
+  if (!range) return "";
+  if (range.earliest && range.latest) {
+    return ` Selon l'irrégularité des relevés : entre le ${proseDateFmt.format(range.earliest)} et le ${proseDateFmt.format(range.latest)}.`;
+  }
+  if (range.earliest) {
+    return ` Au mieux le ${proseDateFmt.format(range.earliest)} ; les relevés sont trop irréguliers pour borner l'autre côté.`;
+  }
+  return "";
 }
 
 function renderChart(history) {
@@ -105,9 +124,13 @@ function renderChart(history) {
     .join("");
 
   // Dashed, de-emphasised and unfilled: this segment is a forecast, not data.
+  // The dot marks the arrival at position 0, so it is only drawn when the line
+  // actually gets there — clipped at the edge, it would mark nothing.
   const projectionMark = projection
     ? `<path class="chart-projection" d="M${last.x.toFixed(1)},${last.y.toFixed(1)} L${projection.x.toFixed(1)},${projection.y.toFixed(1)}" />` +
-      `<circle class="chart-target" cx="${projection.x.toFixed(1)}" cy="${projection.y.toFixed(1)}" r="3.5" />`
+      (projection.clipped
+        ? ""
+        : `<circle class="chart-target" cx="${projection.x.toFixed(1)}" cy="${projection.y.toFixed(1)}" r="3.5" />`)
     : "";
 
   const dateLabels = dateMarks
@@ -126,9 +149,15 @@ function renderChart(history) {
         .join("")
     : "";
 
+  const projectionLabel = !projection
+    ? ""
+    : projection.clipped
+      ? ` Projection en pointillés vers la position 0, atteinte le ${proseDateFmt.format(projection.target)}, au-delà du bord droit du graphique.`
+      : ` Projection en pointillés jusqu'à la position 0 le ${proseDateFmt.format(projection.target)}.`;
+
   el.innerHTML = `
     <svg viewBox="0 0 ${w} ${h}" role="img" tabindex="0"
-      aria-label="Position dans la file du ${dateFmt.format(model.startDate)} au ${dateFmt.format(model.lastDate)}, de ${fmt.format(points[0].position)} à ${fmt.format(end.position)}.${projection ? ` Projection en pointillés jusqu'à la position 0 le ${dateFmt.format(projection.date)}.` : ""} Données détaillées dans le tableau sous le graphique.">
+      aria-label="Position dans la file du ${dateFmt.format(model.startDate)} au ${dateFmt.format(model.lastDate)}, de ${fmt.format(points[0].position)} à ${fmt.format(end.position)}.${projectionLabel} Données détaillées dans le tableau sous le graphique.">
       <defs>
         <linearGradient id="chart-area" x1="0" y1="0" x2="0" y2="1">
           <stop class="chart-area-from" offset="0%" />
@@ -156,7 +185,11 @@ function renderChart(history) {
 
   document.getElementById("chart-caption").textContent =
     "Position dans la file — plus bas = plus proche de l'expédition." +
-    (projection ? " En pointillés : projection jusqu'à votre tour." : "");
+    (!projection
+      ? ""
+      : projection.clipped
+        ? ` En pointillés : projection jusqu'à votre tour, le ${proseDateFmt.format(projection.target)}, hors du graphique.`
+        : " En pointillés : projection jusqu'à votre tour.");
 }
 
 // Crosshair + tooltip. The readout snaps to the nearest snapshot, so the reader

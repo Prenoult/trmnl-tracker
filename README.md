@@ -32,12 +32,22 @@ series:
   left the queue ahead of us (it is FIFO).
 - **orders added** = `queue delta + places gained`.
 - **estimated shipping date** = `snapshot date + position / rate`, where the rate
-  is the places gained per day over the last 7 snapshots (window configurable
-  through `RATE_WINDOW_DAYS` in [`lib/config.js`](lib/config.js)). A sliding
-  window rather than the average since day one, so the estimate stays honest if
-  the shipping cadence changes. Note the window counts snapshots, not calendar
-  days: when the workflow skips a day it covers the same 7 points spread over more
-  time, and the reported span reflects the real elapsed days.
+  is the least-squares slope of position against date over the last 7 snapshots
+  (window configurable through `RATE_WINDOW_DAYS` in
+  [`lib/config.js`](lib/config.js)). A sliding window rather than the average
+  since day one, so the estimate stays honest if the shipping cadence changes,
+  and a fit rather than the difference between the two ends of that window, which
+  gave the snapshots in between no vote and let a single noisy relevé move the
+  date by weeks. Note the window counts snapshots, not calendar days: when the
+  workflow skips a day it covers the same 7 points spread over more time, and the
+  reported span reflects the real elapsed days.
+- **the range around that date** comes from the standard error of the fitted
+  slope: one standard error either side of the rate, turned back into dates. It
+  needs three snapshots to exist at all — on two points the fit is exact and the
+  uncertainty is unknown, not zero — and its late bound disappears when the slow
+  end of the range allows a stalled queue, because "never" is not a date. The
+  headline date is a single day computed from a fitted line; the range is what
+  keeps it from reading as a promise.
 
 The arithmetic lives in [`lib/`](lib/) rather than in the page, so it can be
 tested without a browser:

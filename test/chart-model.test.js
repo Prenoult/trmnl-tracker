@@ -83,12 +83,12 @@ describe("buildChartModel", () => {
 
   it("draws progress as a descending line, matching the caption", () => {
     const model = buildChartModel(real);
-    // The axis runs from the largest rank at the top down to zero at the
-    // baseline, so gaining places moves the line *down*: "plus bas = plus proche
-    // de l'expédition".
+    // The axis runs from the largest rank at the top down to the lowest tick at
+    // the baseline, so gaining places moves the line *down*: "plus bas = plus
+    // proche de l'expédition".
     expect(model.points[2].y).toBeGreaterThan(model.points[0].y);
     expect(model.y(model.lo)).toBeGreaterThan(model.y(model.hi));
-    expect(model.y(0)).toBeCloseTo(model.baselineY, 6);
+    expect(model.y(model.lo)).toBeCloseTo(model.baselineY, 6);
   });
 
   it("keeps the curve inside the plot area", () => {
@@ -124,14 +124,43 @@ describe("buildChartModel", () => {
   });
 
   describe("projection", () => {
-    it("extends the axis to zero and marks the target date", () => {
-      const model = buildChartModel(real);
-      // rate = (1417 - 1316) / 2 = 50.5 places/day, so 1316 places ≈ 27 days.
-      expect(iso(model.projection.date)).toBe("2026-08-21");
+    // Close enough to the front of the queue that the forecast fits: two days of
+    // history, 20 places left at 40/day, so the target lands one day out.
+    const nearlyThere = [day("2026-07-01", 100, 200), day("2026-07-03", 20, 120)];
+
+    it("runs to position zero and extends the axis there when it fits", () => {
+      const model = buildChartModel(nearlyThere);
+      expect(iso(model.projection.date)).toBe("2026-07-04");
+      expect(model.projection.clipped).toBe(false);
       expect(model.lo).toBe(0);
       expect(model.projection.y).toBe(model.y(0));
       // The forecast sits to the right of the last real snapshot.
-      expect(model.projection.x).toBeGreaterThan(model.points[2].x);
+      expect(model.projection.x).toBeGreaterThan(model.points[1].x);
+    });
+
+    it("never squeezes the data below its share of the width", () => {
+      // The case this floor exists for: three relevés and a month-long forecast
+      // used to leave the real curve 7% of the plot.
+      const model = buildChartModel(real);
+      const drawn = model.points[2].x - model.points[0].x;
+      expect(drawn / model.geom.plotW).toBeCloseTo(0.55, 6);
+    });
+
+    it("clips at the right edge, keeping the real target date for the caption", () => {
+      const model = buildChartModel(real);
+      // rate = 50.5 places/day, so 1316 places ≈ 27 days — far past the edge.
+      expect(model.projection.clipped).toBe(true);
+      expect(iso(model.projection.target)).toBe("2026-08-21");
+      expect(iso(model.projection.date)).not.toBe("2026-08-21");
+      expect(model.projection.x).toBeCloseTo(CHART.w - CHART.right, 6);
+    });
+
+    it("scales the axis to the clipped forecast, not down to an off-screen zero", () => {
+      const model = buildChartModel(real);
+      // Reaching for 0 would spend most of the height on ranks never drawn.
+      expect(model.lo).toBeGreaterThan(1000);
+      expect(model.projection.y).toBeGreaterThan(model.points[2].y);
+      expect(model.projection.y).toBeLessThanOrEqual(model.baselineY);
     });
 
     it("is absent when the queue is not moving, and the axis stays on the data", () => {
@@ -201,9 +230,19 @@ describe("buildChartModel", () => {
     });
 
     it("drops the middle label when the last snapshot would collide with an end", () => {
-      const model = buildChartModel(real);
+      // A projection that fits pushes the last snapshot hard left; with the
+      // width floor in place it takes a long series to get there.
+      const model = buildChartModel([...series(30), day("2026-08-01", 5, 400)]);
       expect(model.dateMarks.map((m) => m.anchor)).toEqual(["start", "end"]);
-      expect(iso(model.dateMarks[1].date)).toBe("2026-08-21");
+    });
+
+    it("labels the clipped edge with the date the axis actually stops at", () => {
+      const model = buildChartModel(real);
+      const end = model.dateMarks[model.dateMarks.length - 1];
+      expect(end.anchor).toBe("end");
+      expect(end.date.getTime()).toBe(model.projection.date.getTime());
+      // Not the shipping estimate: that one is off the chart.
+      expect(end.date.getTime()).toBeLessThan(model.projection.target.getTime());
     });
 
     it("anchors the last snapshot at the right edge when there is no projection", () => {
