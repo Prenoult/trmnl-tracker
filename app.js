@@ -5,7 +5,7 @@
 import { ORDER_NUMBER } from "./lib/config.js";
 import { parseDay, daysBetween, plural, movement, shippingEstimate } from "./lib/domain.js";
 import { buildChartModel } from "./lib/chart-model.js";
-import { staleness } from "./lib/history.js";
+import { parseHistory, staleness } from "./lib/history.js";
 
 // The UI is French; keep every Intl formatter on one locale.
 const LOCALE = "fr-FR";
@@ -288,15 +288,31 @@ function renderChartTable(history) {
   }
 }
 
+// parseHistory is the same gate the scraper writes through, so a file that would
+// render as NaN on every card is rejected here instead. Without it, an HTTP error
+// page or a half-written file read as "no data yet" — or worse, as data.
+async function loadHistory() {
+  const res = await fetch("data/history.json", { cache: "no-store" });
+  if (!res.ok) throw new Error(`data/history.json: HTTP ${res.status}`);
+  return parseHistory(await res.text());
+}
+
 async function main() {
   document.getElementById("order-number").textContent = ORDER_NUMBER;
 
   let history;
   try {
-    const res = await fetch("data/history.json", { cache: "no-store" });
-    history = await res.json();
-  } catch {
-    history = [];
+    history = await loadHistory();
+  } catch (err) {
+    // An unreadable file is not an empty one, and saying so is the difference
+    // between "come back tomorrow" and "something is broken, go look".
+    console.error(err);
+    const el = document.createElement("p");
+    el.className = "empty-state";
+    el.textContent =
+      "Données de suivi illisibles ou inaccessibles. Le détail est dans la console.";
+    document.getElementById("summary").replaceChildren(el);
+    return;
   }
 
   if (!history.length) {

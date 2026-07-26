@@ -15,7 +15,9 @@ and progress.
 - [`index.html`](index.html) is a small web app (PWA) that reads
   `data/history.json` and shows: current position, queue size, places gained/lost
   since the previous snapshot, orders added to the queue, an estimated shipping
-  date and a progress chart. Its UI is in French.
+  date and a progress chart. Its UI is in French. It validates the file through
+  the same `parseHistory` gate the scraper writes through, so an HTTP error page
+  or a half-written file says so instead of rendering `NaN` on every card.
 
 No server to run: everything is static and can be hosted for free on GitHub
 Pages.
@@ -81,7 +83,9 @@ tested without a browser:
    `data/history.json`).
 4. The app will be available at `https://<your-user>.github.io/trmnl-tracker/`.
    Open that link on your phone, then **Share → Add to Home Screen** (Safari) to
-   install it as a real app.
+   install it as a real app. The home-screen icon is `icon-180.png`: iOS ignores
+   an SVG `apple-touch-icon` and substitutes a screenshot of the page, so both
+   PNGs are committed rather than generated at deploy time.
 5. The workflow runs automatically every day. To take a snapshot right away
    without waiting: **Actions** tab → *Track queue position* → **Run workflow**.
 
