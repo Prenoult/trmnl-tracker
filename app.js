@@ -5,7 +5,6 @@
 import { ORDER_NUMBER } from "./lib/config.js";
 import { parseDay, daysBetween, plural, movement, shippingEstimate } from "./lib/domain.js";
 import { buildChartModel } from "./lib/chart-model.js";
-import { METER_TICKS, buildFlowModel } from "./lib/flow-model.js";
 import { parseHistory, staleness } from "./lib/history.js";
 
 // The UI is French; keep every Intl formatter on one locale.
@@ -96,6 +95,38 @@ function spread(range) {
   return "";
 }
 
+// The strip under the curve. Direct-labelled at the endpoint only: a number on
+// every column is noise, and every other value stays reachable through the hover
+// readout and the table.
+function barStrip(model) {
+  const { w, left, plotW } = model.geom;
+  const { columns, baselineY, max, width, geom } = model.bars;
+  const latest = columns[columns.length - 1];
+
+  const rects = columns
+    .map(
+      (c) =>
+        `<rect class="bar${c.gained < 0 ? " is-loss" : ""}" x="${c.left.toFixed(1)}" ` +
+        `y="${c.y.toFixed(1)}" width="${width.toFixed(1)}" height="${c.height.toFixed(1)}" rx="1.5" />`
+    )
+    .join("");
+
+  // Above the column, but never above the strip: a one-place gain sits a hair off
+  // the baseline, where the label has to clear the rule without riding out of the
+  // box. It carries the same surface halo as the curve's end label, so it stays
+  // legible wherever the column leaves it.
+  const labelY = Math.max(geom.top + 9, Math.min(latest.y, baselineY) - 8);
+
+  return `
+    <svg class="chart-bars" viewBox="0 0 ${w} ${geom.h}" role="img"
+      aria-label="Places gagnées à chaque relevé, de ${fmt.format(Math.min(...columns.map((c) => c.gained)))} à ${fmt.format(max)}. Détail dans le tableau sous le graphique.">
+      <text class="chart-axis" x="${left - 8}" y="${geom.top + 4}" text-anchor="end">${fmt.format(max)}</text>
+      <line class="bar-baseline" x1="${left}" y1="${baselineY.toFixed(1)}" x2="${left + plotW}" y2="${baselineY.toFixed(1)}" />
+      ${rects}
+      <text class="bar-label" x="${latest.x.toFixed(1)}" y="${labelY.toFixed(1)}" text-anchor="middle">${latest.gained > 0 ? "+" : ""}${fmt.format(latest.gained)}</text>
+    </svg>`;
+}
+
 function renderChart(history) {
   const el = document.getElementById("chart");
   const tableWrap = document.getElementById("chart-data");
@@ -115,6 +146,13 @@ function renderChart(history) {
     .map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(1)},${p.y.toFixed(1)}`)
     .join(" ");
   const area = `${line} L${last.x.toFixed(1)},${baselineY} L${left},${baselineY} Z`;
+
+  // Queue size, on the same axis: the gap between the two lines is the orders
+  // sitting behind us. No fill and a thinner stroke — it is context, the position
+  // is the subject.
+  const totalLine = model.totalPoints
+    .map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(1)},${p.y.toFixed(1)}`)
+    .join(" ");
 
   const grid = ticks
     .map(
@@ -157,8 +195,13 @@ function renderChart(history) {
       : ` Projection en pointillés jusqu'à la position 0 le ${proseDateFmt.format(projection.target)}.`;
 
   el.innerHTML = `
-    <svg viewBox="0 0 ${w} ${h}" role="img" tabindex="0"
-      aria-label="Position dans la file du ${dateFmt.format(model.startDate)} au ${dateFmt.format(model.lastDate)}, de ${fmt.format(points[0].position)} à ${fmt.format(end.position)}.${projectionLabel} Données détaillées dans le tableau sous le graphique.">
+    <div class="chart-legend">
+      <span class="legend-item"><span class="legend-dot" data-series="position"></span>Votre position<strong>#${fmt.format(end.position)}</strong></span>
+      <span class="legend-item"><span class="legend-dot" data-series="total"></span>Taille de la file<strong>${fmt.format(model.totalPoints[model.totalPoints.length - 1].total)}</strong></span>
+    </div>
+    <div class="chart-plot-wrap">
+    <svg class="chart-plot" viewBox="0 0 ${w} ${h}" role="img" tabindex="0"
+      aria-label="Deux courbes du ${dateFmt.format(model.startDate)} au ${dateFmt.format(model.lastDate)} : votre position, de ${fmt.format(points[0].position)} à ${fmt.format(end.position)}, et la taille de la file, de ${fmt.format(model.totalPoints[0].total)} à ${fmt.format(model.totalPoints[model.totalPoints.length - 1].total)}.${projectionLabel} Données détaillées dans le tableau sous le graphique.">
       <defs>
         <linearGradient id="chart-area" x1="0" y1="0" x2="0" y2="1">
           <stop class="chart-area-from" offset="0%" />
@@ -168,6 +211,7 @@ function renderChart(history) {
       <g class="chart-grid">${grid}</g>
       <path class="chart-fill" d="${area}" />
       ${projectionMark}
+      <path class="chart-total-line" d="${totalLine}" />
       <path class="chart-line" d="${line}" />
       ${dots}
       <line class="chart-crosshair" y1="${top}" y2="${top + plotH}" />
@@ -178,6 +222,8 @@ function renderChart(history) {
       <rect class="chart-hit" x="${left}" y="${top}" width="${plotW}" height="${plotH}" />
     </svg>
     <div class="chart-tooltip" hidden><span class="tt-date"></span><strong class="tt-value"></strong><span class="tt-meta"></span></div>
+    </div>
+    ${barStrip(model)}
   `;
 
   wireChartHover(el, history, model);
@@ -185,7 +231,8 @@ function renderChart(history) {
   tableWrap.hidden = false;
 
   document.getElementById("chart-caption").textContent =
-    "Position dans la file — plus bas = plus proche de l'expédition." +
+    "Position dans la file — plus bas = plus proche de l'expédition. " +
+    "En dessous : les places gagnées à chaque relevé." +
     (!projection
       ? ""
       : projection.clipped
@@ -197,7 +244,9 @@ function renderChart(history) {
 // aims at a date rather than at a 2px line; arrow keys drive the same readout.
 function wireChartHover(el, history, model) {
   const { x, y, geom } = model;
-  const svg = el.querySelector("svg");
+  const svg = el.querySelector(".chart-plot");
+  const wrap = el.querySelector(".chart-plot-wrap");
+  const columns = [...el.querySelectorAll(".bar")];
   const crosshair = el.querySelector(".chart-crosshair");
   const cursor = el.querySelector(".chart-cursor");
   const tooltip = el.querySelector(".chart-tooltip");
@@ -216,6 +265,9 @@ function wireChartHover(el, history, model) {
     cursor.setAttribute("cx", x(i));
     cursor.setAttribute("cy", y(entry.position));
     svg.classList.add("is-active");
+    // The column for this relevé is the same reading as the crosshair, so it
+    // lights up with it rather than carrying a second hover of its own.
+    columns.forEach((rect, c) => rect.classList.toggle("is-active", c === i - 1));
 
     // textContent throughout: never build this markup by string concatenation.
     dateEl.textContent = dateFmt.format(parseDay(entry.date));
@@ -229,12 +281,13 @@ function wireChartHover(el, history, model) {
     tooltip.hidden = false;
     const half = tooltip.offsetWidth / 2;
     tooltip.style.left =
-      x(i) / geom.w < 0.5 ? `${el.clientWidth - half - 4}px` : `${half + 4}px`;
+      x(i) / geom.w < 0.5 ? `${wrap.clientWidth - half - 4}px` : `${half + 4}px`;
   }
 
   function hide() {
     active = null;
     svg.classList.remove("is-active");
+    for (const rect of columns) rect.classList.remove("is-active");
     tooltip.hidden = true;
   }
 
@@ -262,111 +315,6 @@ function wireChartHover(el, history, model) {
       hide();
     }
   });
-}
-
-// A meter is decoration for a value that is already written next to it, so it is
-// hidden from assistive tech rather than described twice. The ramp across the
-// filled ticks is decoration too: every tick belongs to the same series, and the
-// value is carried by how many are lit, not by their shade.
-function meter(ticks, series) {
-  const el = document.createElement("div");
-  el.className = "meter";
-  el.setAttribute("aria-hidden", "true");
-  if (series) el.dataset.series = series;
-
-  for (let i = 0; i < METER_TICKS; i++) {
-    const tick = document.createElement("span");
-    tick.className = i < ticks ? "tick is-on" : "tick";
-    if (i < ticks && ticks > 1) {
-      tick.style.opacity = (0.55 + 0.45 * (i / (ticks - 1))).toFixed(3);
-    }
-    el.append(tick);
-  }
-  return el;
-}
-
-// One metered row: a dot (only where two series share a scale and the colour has
-// to mean something), the label, the value, and the meter under them.
-function flowRow({ label, meta = "", value, ticks, series = null, negative = false }) {
-  const row = document.createElement("li");
-  row.className = "flow-row";
-
-  const head = document.createElement("div");
-  head.className = "flow-head";
-
-  const name = document.createElement("span");
-  name.className = "flow-name";
-  if (series) {
-    const dot = document.createElement("span");
-    dot.className = "flow-dot";
-    dot.dataset.series = series;
-    name.append(dot);
-  }
-  name.append(document.createTextNode(label));
-  if (meta) {
-    const metaEl = document.createElement("span");
-    metaEl.className = "flow-meta";
-    metaEl.textContent = meta;
-    name.append(metaEl);
-  }
-
-  const valueEl = document.createElement("span");
-  valueEl.className = negative ? "flow-value negative" : "flow-value";
-  valueEl.textContent = value;
-
-  head.append(name, valueEl);
-  row.append(head, meter(ticks, series));
-  return row;
-}
-
-// Where the movement came from, and how uneven it is. The position curve shows
-// neither: it is cumulative, so a day that gained one place and a day that gained
-// seventy read as much the same slope.
-function renderFlow(history) {
-  const section = document.getElementById("flow-section");
-  const model = buildFlowModel(history);
-  if (!model) {
-    section.hidden = true;
-    return;
-  }
-
-  const [shipped, joined] = model.flow;
-  document.getElementById("flow-window").textContent =
-    model.spanDays === 1
-      ? "Depuis hier."
-      : `Sur les ${fmt.format(model.spanDays)} derniers jours.`;
-
-  document.getElementById("flow-balance").replaceChildren(
-    flowRow({
-      label: "Parties devant vous",
-      value: `${fmt.format(shipped.value)} commande${plural(shipped.value)}`,
-      ticks: shipped.ticks,
-      series: "shipped",
-      negative: shipped.value < 0,
-    }),
-    flowRow({
-      label: "Arrivées derrière vous",
-      value: `${fmt.format(joined.value)} commande${plural(joined.value)}`,
-      ticks: joined.ticks,
-      series: "joined",
-      negative: joined.value < 0,
-    })
-  );
-
-  document.getElementById("flow-daily").replaceChildren(
-    ...model.daily.map((step) =>
-      flowRow({
-        label: dateFmt.format(parseDay(step.date)),
-        // A step covering a skipped day would otherwise read as one very good day.
-        meta: step.days > 1 ? `sur ${step.days} jours` : "",
-        value: `${step.value > 0 ? "+" : ""}${fmt.format(step.value)} place${plural(step.value)}`,
-        ticks: step.ticks,
-        negative: step.value < 0,
-      })
-    )
-  );
-
-  section.hidden = false;
 }
 
 // The table view keeps every value reachable without hovering.
@@ -453,7 +401,6 @@ async function main() {
 
   renderEta(history);
   renderChart(history);
-  renderFlow(history);
 
   const totalGain = first.position - latest.position;
   const totalAdded = history

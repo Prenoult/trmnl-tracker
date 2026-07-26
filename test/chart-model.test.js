@@ -10,11 +10,13 @@ import { addDays, parseDay } from "../lib/domain.js";
 const day = (date, position, total) => ({ date, position, total });
 const iso = (d) => d.toISOString().slice(0, 10);
 
-// The three real snapshots in the repository.
+// The real snapshots in the repository: +30, +71, then +1 — the unevenness the
+// gains strip exists to show.
 const real = [
   day("2026-07-23", 1417, 1523),
   day("2026-07-24", 1387, 1503),
   day("2026-07-25", 1316, 1438),
+  day("2026-07-26", 1315, 1481),
 ];
 
 const series = (count, { from = "2026-07-01", step = 1, start = 1000, gain = 10 } = {}) =>
@@ -76,9 +78,9 @@ describe("buildChartModel", () => {
 
   it("maps one point per snapshot, carrying the source values", () => {
     const model = buildChartModel(real);
-    expect(model.points).toHaveLength(3);
-    expect(model.points.map((p) => p.position)).toEqual([1417, 1387, 1316]);
-    expect(model.points.map((p) => p.total)).toEqual([1523, 1503, 1438]);
+    expect(model.points).toHaveLength(4);
+    expect(model.points.map((p) => p.position)).toEqual([1417, 1387, 1316, 1315]);
+    expect(model.points.map((p) => p.total)).toEqual([1523, 1503, 1438, 1481]);
   });
 
   it("draws progress as a descending line, matching the caption", () => {
@@ -86,7 +88,7 @@ describe("buildChartModel", () => {
     // The axis runs from the largest rank at the top down to the lowest tick at
     // the baseline, so gaining places moves the line *down*: "plus bas = plus
     // proche de l'expédition".
-    expect(model.points[2].y).toBeGreaterThan(model.points[0].y);
+    expect(model.points[model.points.length - 1].y).toBeGreaterThan(model.points[0].y);
     expect(model.y(model.lo)).toBeGreaterThan(model.y(model.hi));
     expect(model.y(model.lo)).toBeCloseTo(model.baselineY, 6);
   });
@@ -142,16 +144,16 @@ describe("buildChartModel", () => {
       // The case this floor exists for: three relevés and a month-long forecast
       // used to leave the real curve 7% of the plot.
       const model = buildChartModel(real);
-      const drawn = model.points[2].x - model.points[0].x;
+      const drawn = model.points[model.points.length - 1].x - model.points[0].x;
       expect(drawn / model.geom.plotW).toBeCloseTo(0.55, 6);
     });
 
     it("clips at the right edge, keeping the real target date for the caption", () => {
       const model = buildChartModel(real);
-      // rate = 50.5 places/day, so 1316 places ≈ 27 days — far past the edge.
+      // The fit reads 37.7 places/day, so 1315 places ≈ 35 days — far past the edge.
       expect(model.projection.clipped).toBe(true);
-      expect(iso(model.projection.target)).toBe("2026-08-21");
-      expect(iso(model.projection.date)).not.toBe("2026-08-21");
+      expect(iso(model.projection.target)).toBe("2026-08-30");
+      expect(iso(model.projection.date)).not.toBe("2026-08-30");
       expect(model.projection.x).toBeCloseTo(CHART.w - CHART.right, 6);
     });
 
@@ -159,7 +161,7 @@ describe("buildChartModel", () => {
       const model = buildChartModel(real);
       // Reaching for 0 would spend most of the height on ranks never drawn.
       expect(model.lo).toBeGreaterThan(1000);
-      expect(model.projection.y).toBeGreaterThan(model.points[2].y);
+      expect(model.projection.y).toBeGreaterThan(model.points[model.points.length - 1].y);
       expect(model.projection.y).toBeLessThanOrEqual(model.baselineY);
     });
 
@@ -178,6 +180,114 @@ describe("buildChartModel", () => {
         day("2026-07-02", 999_999, 999_999),
       ]);
       expect(model.projection).toBeNull();
+    });
+  });
+
+  describe("queue size, the second series", () => {
+    it("shares the position's axis, so the gap between the lines means something", () => {
+      const model = buildChartModel(real);
+      // Both are orders on one scale: the vertical distance between the two
+      // lines is the orders sitting behind us, which is the reason to draw it.
+      expect(model.totalPoints.map((p) => p.total)).toEqual([1523, 1503, 1438, 1481]);
+      expect(model.totalPoints[0].y).toBe(model.y(1523));
+      expect(model.totalPoints.map((p) => p.x)).toEqual(model.points.map((p) => p.x));
+    });
+
+    it("raises the axis to hold the queue, which is always above the rank", () => {
+      const model = buildChartModel(real);
+      expect(model.hi).toBeGreaterThanOrEqual(1523);
+      for (const p of model.totalPoints) {
+        expect(p.y).toBeGreaterThanOrEqual(CHART.top);
+        expect(p.y).toBeLessThanOrEqual(model.baselineY);
+      }
+    });
+
+    it("draws the queue above the position, since a rank cannot exceed its queue", () => {
+      const model = buildChartModel(real);
+      model.totalPoints.forEach((p, i) => expect(p.y).toBeLessThan(model.points[i].y));
+    });
+  });
+
+  describe("the gains strip", () => {
+    it("draws one column per movement, not per snapshot", () => {
+      const { bars } = buildChartModel(real);
+      expect(bars.columns).toHaveLength(3);
+      expect(bars.columns.map((c) => c.gained)).toEqual([30, 71, 1]);
+    });
+
+    it("puts each column on the curve's x, so both panels share one time axis", () => {
+      const model = buildChartModel(real);
+      model.bars.columns.forEach((c, i) => expect(c.x).toBe(model.points[i + 1].x));
+    });
+
+    it("scales to the best movement", () => {
+      const { bars } = buildChartModel(real);
+      expect(bars.max).toBe(71);
+      const best = bars.columns.find((c) => c.gained === 71);
+      expect(best.height).toBeCloseTo(bars.geom.plotH, 6);
+      expect(best.y).toBeCloseTo(bars.geom.top, 6);
+    });
+
+    // Same rule as the axis rounding and for the same reason: 1 place out of 71
+    // is half a pixel, and erasing it hides the unevenness the strip exists for.
+    it("keeps a visible column for a movement of one place", () => {
+      const { bars } = buildChartModel(real);
+      expect(bars.columns.find((c) => c.gained === 1).height).toBeGreaterThanOrEqual(1.5);
+    });
+
+    it("gives a standstill no column at all", () => {
+      const { bars } = buildChartModel([
+        day("2026-07-01", 500, 900),
+        day("2026-07-02", 500, 880),
+      ]);
+      expect(bars.columns[0].height).toBe(0);
+    });
+
+    it("hangs a loss below the baseline", () => {
+      const { bars } = buildChartModel([
+        day("2026-07-01", 100, 200),
+        day("2026-07-02", 90, 190),
+        day("2026-07-03", 110, 215),
+      ]);
+      const loss = bars.columns.find((c) => c.gained === -20);
+      expect(loss.gained).toBe(-20);
+      expect(loss.y).toBeCloseTo(bars.baselineY, 6);
+      expect(loss.y + loss.height).toBeGreaterThan(bars.baselineY);
+      // And the winning column still hangs off the same baseline, upwards.
+      const gain = bars.columns.find((c) => c.gained === 10);
+      expect(gain.y).toBeLessThan(bars.baselineY);
+    });
+
+    it("keeps every column inside the strip", () => {
+      for (const history of [real, series(60), series(9, { step: 3 })]) {
+        const { bars } = buildChartModel(history);
+        for (const c of bars.columns) {
+          expect(c.y).toBeGreaterThanOrEqual(bars.geom.top - 0.001);
+          expect(c.y + c.height).toBeLessThanOrEqual(bars.geom.top + bars.geom.plotH + 0.001);
+        }
+      }
+    });
+
+    it("narrows the columns rather than overlapping them on a long history", () => {
+      const short = buildChartModel(series(4)).bars;
+      const long = buildChartModel(series(60)).bars;
+      expect(long.width).toBeLessThan(short.width);
+      expect(long.width).toBeGreaterThan(0);
+      // Sized off the tightest gap, so the closest pair still clears.
+      const gaps = long.columns.slice(1).map((c, i) => c.x - long.columns[i].x);
+      expect(long.width).toBeLessThanOrEqual(Math.min(...gaps));
+    });
+
+    it("sizes off the tightest gap when the workflow skipped days", () => {
+      // Two relevés a day apart, then one four days later: the wide gap must not
+      // set the width, or the close pair overlaps.
+      const { bars } = buildChartModel([
+        day("2026-07-01", 100, 200),
+        day("2026-07-02", 90, 190),
+        day("2026-07-06", 50, 150),
+      ]);
+      const tightest = bars.columns[1].x - bars.columns[0].x;
+      expect(bars.width).toBeLessThanOrEqual(tightest);
     });
   });
 
