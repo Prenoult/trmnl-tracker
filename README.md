@@ -32,10 +32,23 @@ series:
   left the queue ahead of us (it is FIFO).
 - **orders added** = `queue delta + places gained`.
 - **estimated shipping date** = `snapshot date + position / rate`, where the rate
-  is the places gained per day over the last 7 days (window configurable through
-  `RATE_WINDOW_DAYS` in [`app.js`](app.js)). A sliding window rather than the
-  average since day one, so the estimate stays honest if the shipping cadence
-  changes.
+  is the places gained per day over the last 7 snapshots (window configurable
+  through `RATE_WINDOW_DAYS` in [`lib/config.js`](lib/config.js)). A sliding
+  window rather than the average since day one, so the estimate stays honest if
+  the shipping cadence changes. Note the window counts snapshots, not calendar
+  days: when the workflow skips a day it covers the same 7 points spread over more
+  time, and the reported span reflects the real elapsed days.
+
+The arithmetic lives in [`lib/`](lib/) rather than in the page, so it can be
+tested without a browser:
+
+| Module | Responsibility |
+| --- | --- |
+| [`lib/domain.js`](lib/domain.js) | queue arithmetic: movement, shipping estimate, day maths |
+| [`lib/chart-model.js`](lib/chart-model.js) | chart geometry as plain numbers; `app.js` is a template over it |
+| [`lib/history.js`](lib/history.js) | everything that may read or write `history.json` |
+| [`lib/tracker.js`](lib/tracker.js) | the four requests and regexes that talk to trmnl.com |
+| [`lib/config.js`](lib/config.js) | order number and tuning constants |
 
 ## Deployment (5 minutes)
 
@@ -64,12 +77,44 @@ series:
 
 ## Tracking a different order
 
-Edit `ORDER_NUMBER` in [`.github/workflows/track.yml`](.github/workflows/track.yml)
-and in [`app.js`](app.js) (`const ORDER_NUMBER = "..."`).
+Edit `ORDER_NUMBER` in [`lib/config.js`](lib/config.js) and in
+[`.github/workflows/track.yml`](.github/workflows/track.yml) (the workflow passes
+it through `env:`, so it cannot import the constant).
 
 ## Running locally
 
 ```bash
-node scripts/scrape.mjs   # updates data/history.json
+npm ci                        # dev dependencies (test runner only)
+node scripts/scrape.mjs       # updates data/history.json
 python3 -m http.server 8080   # then open http://localhost:8080
 ```
+
+`app.js` is an ES module, so the page has to be served over HTTP — opening
+`index.html` from the filesystem will not work.
+
+## Tests
+
+```bash
+npm test                          # vitest run
+npm run test:watch
+TZ=Pacific/Auckland npm test      # what CI also runs
+```
+
+The suite covers the two places where a bug is silent and expensive, and
+deliberately stops there:
+
+- **the queue arithmetic**, because no one can tell a correct "+6 orders added"
+  from a wrong one by looking at the page;
+- **the write path**, because `data/history.json` is the whole datastore and the
+  daily workflow commits and pushes whatever lands in it.
+
+Left out on purpose: `Intl` output (ICU data shifts between Node versions, so
+asserting on `"25 juil."` tests the platform, not us), the exact SVG markup, CSS,
+and any request to the real trmnl.com. The suite runs in two timezones because
+dates are UTC days and every label is formatted in `fr-FR`.
+
+No test can detect the day TRMNL rewords its tracker page — that is what
+`validateSnapshot` is for: it refuses to write a snapshot that jumped
+implausibly, so a broken scrape fails the workflow instead of committing garbage.
+If the daily run stops succeeding, the page shows a banner rather than presenting
+a stale position as current.

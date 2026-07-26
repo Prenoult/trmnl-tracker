@@ -1,6 +1,22 @@
 // Minimal offline cache so the app still opens (with last-known data) without a connection.
-const CACHE = "trmnl-tracker-v2";
-const ASSETS = ["./", "index.html", "style.css", "app.js", "manifest.json", "icon.svg", "data/history.json"];
+// Bump CACHE whenever ASSETS changes, or clients keep serving the old bundle.
+// app.js is an ES module: every file it imports has to be listed too, otherwise
+// the page loads from cache and then dies on a failed import. test/assets.test.js
+// enforces that.
+const CACHE = "trmnl-tracker-v3";
+const ASSETS = [
+  "./",
+  "index.html",
+  "style.css",
+  "app.js",
+  "lib/config.js",
+  "lib/domain.js",
+  "lib/chart-model.js",
+  "lib/history.js",
+  "manifest.json",
+  "icon.svg",
+  "data/history.json",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(ASSETS)));

@@ -23,6 +23,8 @@
     <p class="order-label">Commande #<span id="order-number">…</span></p>
   </header>
 
+  <p class="stale-banner" id="stale-banner" role="status" hidden></p>
+
   <section class="hero">
     <div class="stat stat--primary">
       <span class="stat-value" id="position">–</span>
@@ -82,7 +84,7 @@
   </footer>
 </main>
 
-<script src="app.js"></script>
+<script type="module" src="app.js"></script>
 <script>
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => navigator.serviceWorker.register("sw.js"));
