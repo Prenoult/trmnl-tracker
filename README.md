@@ -85,6 +85,30 @@ tested without a browser:
 5. The workflow runs automatically every day. To take a snapshot right away
    without waiting: **Actions** tab → *Track queue position* → **Run workflow**.
 
+## When it breaks
+
+The scraper separates the two ways trmnl.com can let it down, because they call
+for opposite responses:
+
+- **a bad minute** — a dropped connection, a 429, a 5xx — is retried three times
+  with an exponential backoff. The run happens once a day, so waiting a few
+  seconds is always better than losing a snapshot to a blip.
+- **a reworded page** answers 200 with markup the regexes no longer match. That
+  one is not retried: it fails the run, and `validateSnapshot` is there for the
+  subtler version where a half-matching regex yields a plausible-looking number.
+
+Either way, a failed run writes nothing: `data/history.json` keeps whatever it
+had. The workflow then opens an issue labelled `tracker-failure` (or comments on
+the open one, so a week of failures is one thread), and the app shows a banner
+once the newest snapshot is more than `STALE_AFTER_DAYS` old rather than
+presenting a stale position as current.
+
+One failure mode has no alarm: GitHub disables scheduled workflows on public
+repositories after 60 days without repository activity, and it is not documented
+whether the workflow's own daily commit resets that clock. A disabled workflow
+does not fail, so no issue is opened — the staleness banner in the app is what
+catches it. If the tracking ever stops quietly, check the **Actions** tab first.
+
 ## Tracking a different order
 
 Edit `ORDER_NUMBER` in [`lib/config.js`](lib/config.js) and in
