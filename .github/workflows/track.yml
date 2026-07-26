@@ -8,6 +8,12 @@ on:
 permissions:
   contents: write
 
+# A manual run overlapping the cron would have two jobs committing and pushing the
+# same file. Queue them instead.
+concurrency:
+  group: track-queue-position
+  cancel-in-progress: false
+
 jobs:
   scrape:
     runs-on: ubuntu-latest

@@ -3,6 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "scrape": "node scripts/scrape.mjs"
+    "scrape": "node scripts/scrape.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.10"
   }
 }

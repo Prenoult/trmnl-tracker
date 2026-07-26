@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Dates in history.json are UTC days. Running the suite from a timezone
+        # well off UTC is what catches the off-by-one-day class of bug, so it is
+        # part of the gate rather than a thing to remember to try.
+        timezone: [UTC, Pacific/Auckland]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm test
+        env:
+          TZ: ${{ matrix.timezone }}
