@@ -1,10 +1,14 @@
-const ORDER_NUMBER = "51230";
+// Front end: reads data/history.json and renders it. All the arithmetic lives in
+// lib/ so it can be tested without a browser; what is left here is formatting and
+// DOM.
+
+import { ORDER_NUMBER } from "./lib/config.js";
+import { parseDay, daysBetween, plural, movement, shippingEstimate } from "./lib/domain.js";
+import { buildChartModel } from "./lib/chart-model.js";
+import { staleness } from "./lib/history.js";
 
 // The UI is French; keep every Intl formatter on one locale.
 const LOCALE = "fr-FR";
-
-// Window (in days) used to estimate how fast the queue is moving.
-const RATE_WINDOW_DAYS = 7;
 
 const fmt = new Intl.NumberFormat(LOCALE);
 const rateFmt = new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 1 });
@@ -15,30 +19,6 @@ const longDateFmt = new Intl.DateTimeFormat(LOCALE, {
   month: "long",
   year: "numeric",
 });
-
-// Dates in history.json are plain UTC days ("2026-07-25"), so parse them as UTC:
-// formatting them in a timezone west of Greenwich would otherwise shift every
-// label back by a day.
-const parseDay = (s) => new Date(`${s}T00:00:00Z`);
-const daysBetween = (a, b) => Math.round((parseDay(b) - parseDay(a)) / 86400000);
-const addDays = (date, n) => new Date(date.getTime() + n * 86400000);
-// French only pluralises from two upwards, so zero stays singular ("0 place").
-const plural = (n, s = "s") => (Math.abs(n) > 1 ? s : "");
-
-// TRMNL publishes the *current* queue size ("in a queue of N orders"), not a
-// running total: it shrinks as soon as more orders ship than come in. Comparing
-// two totals therefore yields the net balance, not the orders added. The places
-// we gain are the orders that left the queue ahead of us (it is FIFO), and the
-// new orders are what remains:
-//   added = queue delta + places gained
-function movement(prev, curr) {
-  const gained = prev.position - curr.position;
-  return {
-    gained,
-    added: curr.total - prev.total + gained,
-    days: Math.max(1, daysBetween(prev.date, curr.date)),
-  };
-}
 
 function setDelta(el, value, { invert = false, neutral = false } = {}) {
   if (value === null) {
@@ -52,27 +32,19 @@ function setDelta(el, value, { invert = false, neutral = false } = {}) {
   el.className = "delta-value" + (good ? " positive" : bad ? " negative" : "");
 }
 
-// Rate over the last few days rather than the average since day one: it stays
-// honest if TRMNL's shipping cadence speeds up or slows down.
-function shippingEstimate(history) {
-  if (history.length < 2) return null;
-
-  const latest = history[history.length - 1];
-  const start = history[Math.max(0, history.length - 1 - RATE_WINDOW_DAYS)];
-  const spanDays = daysBetween(start.date, latest.date);
-  if (spanDays <= 0) return null;
-
-  const rate = (start.position - latest.position) / spanDays;
-  if (rate <= 0) return { rate, spanDays, daysLeft: null, date: null };
-
-  const daysLeft = Math.ceil(latest.position / rate);
-  return {
-    rate,
-    spanDays,
-    daysLeft,
-    // Beyond a 10-year horizon the projection is noise; drop the date.
-    date: daysLeft > 3650 ? null : addDays(parseDay(latest.date), daysLeft),
-  };
+// A failed workflow silently skips a day, and every figure on the page would
+// otherwise read as today's.
+function renderStale(history, today) {
+  const el = document.getElementById("stale-banner");
+  const { days, stale } = staleness(history, today);
+  if (!stale) {
+    el.hidden = true;
+    return;
+  }
+  el.textContent =
+    `Dernier relevé il y a ${fmt.format(days)} jour${plural(days)} : ` +
+    `la mise à jour quotidienne semble en échec, les chiffres ci-dessous ne sont plus à jour.`;
+  el.hidden = false;
 }
 
 function renderEta(history) {
@@ -104,95 +76,40 @@ function renderEta(history) {
     `au rythme de ${rateFmt.format(est.rate)} place${plural(est.rate)}/jour observé ${window}.`;
 }
 
-// Chart geometry, in viewBox units. The left gutter holds the y-axis values and
-// the bottom band the dates, so no label sits outside the drawn box.
-const CHART = { w: 440, h: 188, top: 14, right: 14, bottom: 26, left: 46 };
-
-// Axis steps rounded to 1/2/2.5/5 × 10ⁿ, so ticks read as round numbers rather
-// than as the raw min and max of the data.
-function niceTicks(min, max, count = 4) {
-  // A flat series would collapse the scale to a single tick and divide by zero.
-  if (max === min) {
-    min -= 1;
-    max += 1;
-  }
-
-  const raw = (max - min) / (count - 1);
-  const magnitude = 10 ** Math.floor(Math.log10(raw));
-  // Positions count whole orders, so never label a fractional rank.
-  const step = Math.max([1, 2, 2.5, 5, 10].map((m) => m * magnitude).find((s) => s >= raw), 1);
-
-  // Round outwards on both ends: a domain stopping short of the extremes would
-  // push the line outside the plot and clip it.
-  const first = Math.floor(min / step) * step;
-  const last = Math.ceil(max / step) * step;
-  const ticks = [];
-  for (let v = first; v <= last + step / 2; v += step) ticks.push(v);
-  return ticks;
-}
-
 function renderChart(history) {
   const el = document.getElementById("chart");
   const tableWrap = document.getElementById("chart-data");
-  if (history.length < 2) {
+  const model = buildChartModel(history);
+
+  if (!model) {
     el.innerHTML = '<p class="empty-state">Revenez demain pour voir la courbe de progression.</p>';
     tableWrap.hidden = true;
     return;
   }
 
-  const { w, h, top, right, bottom, left } = CHART;
-  const plotW = w - left - right;
-  const plotH = h - top - bottom;
-  const lastIndex = history.length - 1;
+  const { geom, points, ticks, projection, dateMarks, end, baselineY } = model;
+  const { w, h, top, left, plotW, plotH } = geom;
+  const last = points[points.length - 1];
 
-  // The projection runs to position 0, so the axis has to reach 0 too, and the
-  // x-axis has to span real time rather than snapshot indexes — otherwise the
-  // future date has nowhere to sit (and missed days plot as regular intervals).
-  const estimate = shippingEstimate(history);
-  const projection = estimate?.date ?? null;
-  const startDate = parseDay(history[0].date);
-  const lastDate = parseDay(history[lastIndex].date);
-  const endDate = projection ?? lastDate;
-  const span = endDate - startDate || 1;
-
-  const positions = history.map((p) => p.position);
-  const ticks = niceTicks(projection ? 0 : Math.min(...positions), Math.max(...positions));
-  const lo = ticks[0];
-  const hi = ticks[ticks.length - 1];
-
-  const xAt = (date) => left + ((date - startDate) / span) * plotW;
-  const xs = history.map((p) => xAt(parseDay(p.date)));
-  const x = (i) => xs[i];
-  const y = (v) => top + (1 - (v - lo) / (hi - lo)) * plotH;
-
-  const line = history
-    .map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.position).toFixed(1)}`)
+  const line = points
+    .map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(1)},${p.y.toFixed(1)}`)
     .join(" ");
-  const area = `${line} L${x(lastIndex).toFixed(1)},${top + plotH} L${left},${top + plotH} Z`;
+  const area = `${line} L${last.x.toFixed(1)},${baselineY} L${left},${baselineY} Z`;
 
   const grid = ticks
     .map(
-      (v) =>
-        `<line x1="${left}" y1="${y(v).toFixed(1)}" x2="${left + plotW}" y2="${y(v).toFixed(1)}" />` +
-        `<text class="chart-axis" x="${left - 8}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${fmt.format(v)}</text>`
+      (t) =>
+        `<line x1="${left}" y1="${t.y.toFixed(1)}" x2="${left + plotW}" y2="${t.y.toFixed(1)}" />` +
+        `<text class="chart-axis" x="${left - 8}" y="${(t.y + 4).toFixed(1)}" text-anchor="end">${fmt.format(t.value)}</text>`
     )
     .join("");
 
   // Dashed, de-emphasised and unfilled: this segment is a forecast, not data.
   const projectionMark = projection
-    ? `<path class="chart-projection" d="M${x(lastIndex).toFixed(1)},${y(history[lastIndex].position).toFixed(1)} L${xAt(projection).toFixed(1)},${y(0).toFixed(1)}" />` +
-      `<circle class="chart-target" cx="${xAt(projection).toFixed(1)}" cy="${y(0).toFixed(1)}" r="3.5" />`
+    ? `<path class="chart-projection" d="M${last.x.toFixed(1)},${last.y.toFixed(1)} L${projection.x.toFixed(1)},${projection.y.toFixed(1)}" />` +
+      `<circle class="chart-target" cx="${projection.x.toFixed(1)}" cy="${projection.y.toFixed(1)}" r="3.5" />`
     : "";
 
-  // Both ends always; the last snapshot only where it will not collide with them.
-  const dateMarks = [
-    { date: startDate, at: xAt(startDate), anchor: "start" },
-    ...(xAt(lastDate) > left + plotW * 0.25 && xAt(lastDate) < left + plotW * 0.75
-      ? [{ date: lastDate, at: xAt(lastDate), anchor: "middle" }]
-      : []),
-    ...(projection ? [{ date: projection, at: xAt(projection), anchor: "end" }] : []),
-    ...(projection ? [] : [{ date: lastDate, at: xAt(lastDate), anchor: "end" }]),
-  ];
   const dateLabels = dateMarks
     .map(
       (m) =>
@@ -200,27 +117,18 @@ function renderChart(history) {
     )
     .join("");
 
-  // Past ~20 snapshots a dot per day turns the line into a bead string.
-  const dots =
-    history.length <= 20
-      ? history
-          .slice(0, -1)
-          .map(
-            (p, i) =>
-              `<circle class="chart-dot" cx="${x(i).toFixed(1)}" cy="${y(p.position).toFixed(1)}" r="2.5" />`
-          )
-          .join("")
-      : "";
-
-  const endX = x(lastIndex);
-  const endY = y(history[lastIndex].position);
-  // With a projection the last snapshot sits far from the right edge, so the
-  // value label flips to the free side instead of hanging over the forecast.
-  const labelLeft = endX > left + plotW * 0.6;
+  const dots = model.showDots
+    ? points
+        .slice(0, -1)
+        .map(
+          (p) => `<circle class="chart-dot" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.5" />`
+        )
+        .join("")
+    : "";
 
   el.innerHTML = `
     <svg viewBox="0 0 ${w} ${h}" role="img" tabindex="0"
-      aria-label="Position dans la file du ${dateFmt.format(startDate)} au ${dateFmt.format(lastDate)}, de ${fmt.format(history[0].position)} à ${fmt.format(history[lastIndex].position)}.${projection ? ` Projection en pointillés jusqu'à la position 0 le ${dateFmt.format(projection)}.` : ""} Données détaillées dans le tableau sous le graphique.">
+      aria-label="Position dans la file du ${dateFmt.format(model.startDate)} au ${dateFmt.format(model.lastDate)}, de ${fmt.format(points[0].position)} à ${fmt.format(end.position)}.${projection ? ` Projection en pointillés jusqu'à la position 0 le ${dateFmt.format(projection.date)}.` : ""} Données détaillées dans le tableau sous le graphique.">
       <defs>
         <linearGradient id="chart-area" x1="0" y1="0" x2="0" y2="1">
           <stop class="chart-area-from" offset="0%" />
@@ -234,15 +142,15 @@ function renderChart(history) {
       ${dots}
       <line class="chart-crosshair" y1="${top}" y2="${top + plotH}" />
       <circle class="chart-cursor" r="4.5" />
-      <circle class="chart-end" cx="${endX.toFixed(1)}" cy="${endY.toFixed(1)}" r="4.5" />
-      <text class="chart-end-label" x="${(labelLeft ? endX - 7 : endX + 7).toFixed(1)}" y="${Math.max(endY - 13, top + 11).toFixed(1)}" text-anchor="${labelLeft ? "end" : "start"}">#${fmt.format(history[lastIndex].position)}</text>
+      <circle class="chart-end" cx="${end.x.toFixed(1)}" cy="${end.y.toFixed(1)}" r="4.5" />
+      <text class="chart-end-label" x="${end.labelX.toFixed(1)}" y="${end.labelY.toFixed(1)}" text-anchor="${end.labelLeft ? "end" : "start"}">#${fmt.format(end.position)}</text>
       ${dateLabels}
       <rect class="chart-hit" x="${left}" y="${top}" width="${plotW}" height="${plotH}" />
     </svg>
     <div class="chart-tooltip" hidden><span class="tt-date"></span><strong class="tt-value"></strong><span class="tt-meta"></span></div>
   `;
 
-  wireChartHover(el, history, { x, y, toClientRatio: (i) => x(i) / w });
+  wireChartHover(el, history, model);
   renderChartTable(history);
   tableWrap.hidden = false;
 
@@ -253,7 +161,8 @@ function renderChart(history) {
 
 // Crosshair + tooltip. The readout snaps to the nearest snapshot, so the reader
 // aims at a date rather than at a 2px line; arrow keys drive the same readout.
-function wireChartHover(el, history, { x, y, toClientRatio }) {
+function wireChartHover(el, history, model) {
+  const { x, y, geom } = model;
   const svg = el.querySelector("svg");
   const crosshair = el.querySelector(".chart-crosshair");
   const cursor = el.querySelector(".chart-cursor");
@@ -286,7 +195,7 @@ function wireChartHover(el, history, { x, y, toClientRatio }) {
     tooltip.hidden = false;
     const half = tooltip.offsetWidth / 2;
     tooltip.style.left =
-      toClientRatio(i) < 0.5 ? `${el.clientWidth - half - 4}px` : `${half + 4}px`;
+      x(i) / geom.w < 0.5 ? `${el.clientWidth - half - 4}px` : `${half + 4}px`;
   }
 
   function hide() {
@@ -297,7 +206,7 @@ function wireChartHover(el, history, { x, y, toClientRatio }) {
 
   function nearestIndex(clientX) {
     const rect = svg.getBoundingClientRect();
-    const viewX = ((clientX - rect.left) / rect.width) * CHART.w;
+    const viewX = ((clientX - rect.left) / rect.width) * geom.w;
     let best = 0;
     for (let i = 1; i < history.length; i++) {
       if (Math.abs(x(i) - viewX) < Math.abs(x(best) - viewX)) best = i;
@@ -367,6 +276,9 @@ async function main() {
   const previous = history.length > 1 ? history[history.length - 2] : null;
   const first = history[0];
   const last = previous ? movement(previous, latest) : null;
+
+  // Same UTC convention as the scraper, so "today" means the same day on both sides.
+  renderStale(history, new Date().toISOString().slice(0, 10));
 
   document.getElementById("position").textContent = `#${fmt.format(latest.position)}`;
   document.getElementById("total").textContent = fmt.format(latest.total);

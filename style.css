@@ -54,6 +54,18 @@ header h1 {
   font-size: 0.9rem;
 }
 
+/* Shown only when the daily workflow has stopped updating the snapshot, so the
+   figures below cannot be mistaken for today's. */
+.stale-banner {
+  margin: 16px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--bad);
+  border-radius: 10px;
+  color: var(--bad);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
 .hero {
   display: flex;
   gap: 12px;
