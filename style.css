@@ -7,6 +7,16 @@
   --good: #16a34a;
   --bad: #dc2626;
   --border: #e5e7eb;
+  /* Two series sharing one scale, so the pair has to be told apart by anyone:
+     validated as a categorical palette against this surface (lightness band,
+     chroma floor, CVD separation, normal-vision floor, 3:1 contrast). Slot 1 is
+     the accent the position line already wears, so the hue keeps meaning the
+     same thing across the page. */
+  --series-out: #2563eb;
+  --series-in: #eb6834;
+  /* The unlit part of a meter is the scale, not data: one step off the surface,
+     like the chart's gridlines. */
+  --meter-track: #e3e6ea;
   color-scheme: light dark;
 }
 
@@ -22,6 +32,11 @@
     --good: #34d058;
     --bad: #ff6b6b;
     --border: #262b35;
+    /* Re-stepped for the dark surface and validated as a set there, not flipped:
+       the light steps sit outside the dark band. */
+    --series-out: #4f92fb;
+    --series-in: #d95926;
+    --meter-track: #2c3240;
   }
 }
 
@@ -361,6 +376,117 @@ svg.is-active .chart-cursor { opacity: 1; }
   font-size: 0.78rem;
   margin: 8px 4px 0;
 }
+
+.flow-section {
+  margin-top: 28px;
+}
+
+.flow-section h2 {
+  font-size: 1rem;
+  margin: 0 0 10px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+.flow-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+}
+
+/* One hairline between the two blocks, rather than two nested cards: they are
+   two readings of the same window, not two unrelated panels. */
+.flow-block + .flow-block {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.flow-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.flow-sub {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  margin: 2px 0 0;
+}
+
+.flow-rows {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.flow-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* Labels and values wear ink; the dot beside them carries the series colour. */
+.flow-name {
+  font-size: 0.85rem;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.flow-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  align-self: center;
+}
+
+.flow-meta {
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.flow-value {
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.flow-value.negative { color: var(--bad); }
+
+/* The meter itself: fixed-count ticks that share the row's width, so it stays a
+   proportion at any screen size rather than a fixed-width graphic. */
+.meter {
+  display: flex;
+  gap: 3px;
+  margin-top: 6px;
+}
+
+.tick {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--meter-track);
+}
+
+.tick.is-on { background: var(--accent); }
+
+.flow-dot[data-series="shipped"],
+[data-series="shipped"] .tick.is-on { background: var(--series-out); }
+
+.flow-dot[data-series="joined"],
+[data-series="joined"] .tick.is-on { background: var(--series-in); }
 
 .summary {
   margin-top: 20px;

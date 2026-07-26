@@ -15,7 +15,7 @@ and progress.
 - [`index.html`](index.html) is a small web app (PWA) that reads
   `data/history.json` and shows: current position, queue size, places gained/lost
   since the previous snapshot, orders added to the queue, an estimated shipping
-  date and a progress chart. Its UI is in French. It validates the file through
+  date, a progress chart and a cadence card. Its UI is in French. It validates the file through
   the same `parseHistory` gate the scraper writes through, so an HTTP error page
   or a half-written file says so instead of rendering `NaN` on every card.
 
@@ -51,6 +51,14 @@ series:
   headline date is a single day computed from a fitted line; the range is what
   keeps it from reading as a promise.
 
+- **the cadence card** reads over the same window as the estimate, and answers the
+  two questions the position curve cannot. *Where the movement came from*: orders
+  gone ahead of us against orders joined behind us, two meters on one scale. *How
+  even it is*: one meter per relevé, scaled to the best one. The curve is
+  cumulative, so a day that gained one place and a day that gained seventy read as
+  much the same slope — which is exactly the unevenness the estimate's range is
+  reporting, so the card is the evidence for it.
+
 The arithmetic lives in [`lib/`](lib/) rather than in the page, so it can be
 tested without a browser:
 
@@ -58,6 +66,7 @@ tested without a browser:
 | --- | --- |
 | [`lib/domain.js`](lib/domain.js) | queue arithmetic: movement, shipping estimate, day maths |
 | [`lib/chart-model.js`](lib/chart-model.js) | chart geometry as plain numbers; `app.js` is a template over it |
+| [`lib/flow-model.js`](lib/flow-model.js) | the cadence card's values and meter fill counts |
 | [`lib/history.js`](lib/history.js) | everything that may read or write `history.json` |
 | [`lib/tracker.js`](lib/tracker.js) | the four requests and regexes that talk to trmnl.com |
 | [`lib/config.js`](lib/config.js) | order number and tuning constants |

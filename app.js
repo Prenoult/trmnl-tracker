@@ -5,6 +5,7 @@
 import { ORDER_NUMBER } from "./lib/config.js";
 import { parseDay, daysBetween, plural, movement, shippingEstimate } from "./lib/domain.js";
 import { buildChartModel } from "./lib/chart-model.js";
+import { METER_TICKS, buildFlowModel } from "./lib/flow-model.js";
 import { parseHistory, staleness } from "./lib/history.js";
 
 // The UI is French; keep every Intl formatter on one locale.
@@ -263,6 +264,111 @@ function wireChartHover(el, history, model) {
   });
 }
 
+// A meter is decoration for a value that is already written next to it, so it is
+// hidden from assistive tech rather than described twice. The ramp across the
+// filled ticks is decoration too: every tick belongs to the same series, and the
+// value is carried by how many are lit, not by their shade.
+function meter(ticks, series) {
+  const el = document.createElement("div");
+  el.className = "meter";
+  el.setAttribute("aria-hidden", "true");
+  if (series) el.dataset.series = series;
+
+  for (let i = 0; i < METER_TICKS; i++) {
+    const tick = document.createElement("span");
+    tick.className = i < ticks ? "tick is-on" : "tick";
+    if (i < ticks && ticks > 1) {
+      tick.style.opacity = (0.55 + 0.45 * (i / (ticks - 1))).toFixed(3);
+    }
+    el.append(tick);
+  }
+  return el;
+}
+
+// One metered row: a dot (only where two series share a scale and the colour has
+// to mean something), the label, the value, and the meter under them.
+function flowRow({ label, meta = "", value, ticks, series = null, negative = false }) {
+  const row = document.createElement("li");
+  row.className = "flow-row";
+
+  const head = document.createElement("div");
+  head.className = "flow-head";
+
+  const name = document.createElement("span");
+  name.className = "flow-name";
+  if (series) {
+    const dot = document.createElement("span");
+    dot.className = "flow-dot";
+    dot.dataset.series = series;
+    name.append(dot);
+  }
+  name.append(document.createTextNode(label));
+  if (meta) {
+    const metaEl = document.createElement("span");
+    metaEl.className = "flow-meta";
+    metaEl.textContent = meta;
+    name.append(metaEl);
+  }
+
+  const valueEl = document.createElement("span");
+  valueEl.className = negative ? "flow-value negative" : "flow-value";
+  valueEl.textContent = value;
+
+  head.append(name, valueEl);
+  row.append(head, meter(ticks, series));
+  return row;
+}
+
+// Where the movement came from, and how uneven it is. The position curve shows
+// neither: it is cumulative, so a day that gained one place and a day that gained
+// seventy read as much the same slope.
+function renderFlow(history) {
+  const section = document.getElementById("flow-section");
+  const model = buildFlowModel(history);
+  if (!model) {
+    section.hidden = true;
+    return;
+  }
+
+  const [shipped, joined] = model.flow;
+  document.getElementById("flow-window").textContent =
+    model.spanDays === 1
+      ? "Depuis hier."
+      : `Sur les ${fmt.format(model.spanDays)} derniers jours.`;
+
+  document.getElementById("flow-balance").replaceChildren(
+    flowRow({
+      label: "Parties devant vous",
+      value: `${fmt.format(shipped.value)} commande${plural(shipped.value)}`,
+      ticks: shipped.ticks,
+      series: "shipped",
+      negative: shipped.value < 0,
+    }),
+    flowRow({
+      label: "Arrivées derrière vous",
+      value: `${fmt.format(joined.value)} commande${plural(joined.value)}`,
+      ticks: joined.ticks,
+      series: "joined",
+      negative: joined.value < 0,
+    })
+  );
+
+  document.getElementById("flow-daily").replaceChildren(
+    ...model.daily.map((step) =>
+      flowRow({
+        label: dateFmt.format(parseDay(step.date)),
+        // A step covering a skipped day would otherwise read as one very good day.
+        meta: step.days > 1 ? `sur ${step.days} jours` : "",
+        value: `${step.value > 0 ? "+" : ""}${fmt.format(step.value)} place${plural(step.value)}`,
+        ticks: step.ticks,
+        negative: step.value < 0,
+      })
+    )
+  );
+
+  section.hidden = false;
+}
+
 // The table view keeps every value reachable without hovering.
 function renderChartTable(history) {
   const body = document.getElementById("chart-table-body");
@@ -347,6 +453,7 @@ async function main() {
 
   renderEta(history);
   renderChart(history);
+  renderFlow(history);
 
   const totalGain = first.position - latest.position;
   const totalAdded = history
