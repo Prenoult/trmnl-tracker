@@ -339,7 +339,7 @@ header h1 {
 
 .bar {
   fill: var(--series-position);
-  opacity: 0.7;
+  opacity: 0.6;
   transition: opacity 0.12s ease;
 }
 

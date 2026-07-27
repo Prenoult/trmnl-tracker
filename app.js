@@ -99,15 +99,15 @@ function spread(range) {
 // every column is noise, and every other value stays reachable through the hover
 // readout and the table.
 function barStrip(model) {
-  const { w, left, plotW } = model.geom;
-  const { columns, baselineY, max, width, geom } = model.bars;
+  const { w, left } = model.geom;
+  const { columns, baselineY, max, from, to, geom } = model.bars;
   const latest = columns[columns.length - 1];
 
   const rects = columns
     .map(
       (c) =>
-        `<rect class="bar${c.gained < 0 ? " is-loss" : ""}" x="${c.left.toFixed(1)}" ` +
-        `y="${c.y.toFixed(1)}" width="${width.toFixed(1)}" height="${c.height.toFixed(1)}" rx="1.5" />`
+        `<rect class="bar${c.rate < 0 ? " is-loss" : ""}" x="${c.left.toFixed(1)}" ` +
+        `y="${c.y.toFixed(1)}" width="${c.width.toFixed(1)}" height="${c.height.toFixed(1)}" rx="1.5" />`
     )
     .join("");
 
@@ -119,11 +119,11 @@ function barStrip(model) {
 
   return `
     <svg class="chart-bars" viewBox="0 0 ${w} ${geom.h}" role="img"
-      aria-label="Places gagnées à chaque relevé, de ${fmt.format(Math.min(...columns.map((c) => c.gained)))} à ${fmt.format(max)}. Détail dans le tableau sous le graphique.">
-      <text class="chart-axis" x="${left - 8}" y="${geom.top + 4}" text-anchor="end">${fmt.format(max)}</text>
-      <line class="bar-baseline" x1="${left}" y1="${baselineY.toFixed(1)}" x2="${left + plotW}" y2="${baselineY.toFixed(1)}" />
+      aria-label="Places gagnées par jour à chaque relevé, de ${rateFmt.format(Math.min(...columns.map((c) => c.rate)))} à ${rateFmt.format(max)}. Détail dans le tableau sous le graphique.">
+      <text class="chart-axis" x="${left - 8}" y="${geom.top + 4}" text-anchor="end">${rateFmt.format(max)}</text>
+      <line class="bar-baseline" x1="${from.toFixed(1)}" y1="${baselineY.toFixed(1)}" x2="${to.toFixed(1)}" y2="${baselineY.toFixed(1)}" />
       ${rects}
-      <text class="bar-label" x="${latest.x.toFixed(1)}" y="${labelY.toFixed(1)}" text-anchor="middle">${latest.gained > 0 ? "+" : ""}${fmt.format(latest.gained)}</text>
+      <text class="bar-label" x="${(latest.left + latest.width / 2).toFixed(1)}" y="${labelY.toFixed(1)}" text-anchor="middle">${latest.rate > 0 ? "+" : ""}${rateFmt.format(latest.rate)}</text>
     </svg>`;
 }
 
@@ -232,7 +232,7 @@ function renderChart(history) {
 
   document.getElementById("chart-caption").textContent =
     "Position dans la file — plus bas = plus proche de l'expédition. " +
-    "En dessous : les places gagnées à chaque relevé." +
+    "En dessous : les places gagnées par jour, chaque colonne couvrant l'intervalle qu'elle mesure." +
     (!projection
       ? ""
       : projection.clipped
@@ -327,8 +327,13 @@ function renderChartTable(history) {
     const previous = i > 0 ? movement(history[i - 1], entry) : null;
     const row = document.createElement("tr");
 
+    // The row covers the interval since the previous relevé, so a skipped day has
+    // to show here too — the strip encodes it as width, and this table is what
+    // stands in for the strip when the figures are read rather than looked at.
+    const span = previous && previous.days > 1 ? ` (${previous.days} j)` : "";
+
     for (const value of [
-      dateFmt.format(parseDay(entry.date)),
+      dateFmt.format(parseDay(entry.date)) + span,
       `#${fmt.format(entry.position)}`,
       fmt.format(entry.total),
       previous ? `${previous.gained > 0 ? "+" : ""}${fmt.format(previous.gained)}` : "–",

@@ -59,10 +59,18 @@ answers neither of the questions the estimate raises:
   and it has to be, because the reading is the *gap* between the two lines, which
   is the orders sitting behind us. Two y-scales would be a dual axis, and the gap
   would stop meaning anything.
-- **the places gained per relevé** are columns under the curve, on that same x
+- **the places gained per day** are columns under the curve, on that same x
   mapping. The curve is cumulative, so it smooths exactly what the estimate rests
   on: a relevé that gained one place and one that gained seventy read as much the
   same slope. The strip is the evidence behind the estimate's range.
+
+  Each column spans the interval it measures and its height is the *rate*, so its
+  area is the places gained — a histogram over uneven bins. Where every relevé is
+  a day apart the rate and the gain are the same number and it reads as a plain
+  column chart; where the workflow skipped days, one relevé carries several days
+  of movement, and a column the height of a normal one would claim a cadence that
+  never happened. A skipped day is now the one thing on the page that is *wider*
+  rather than invisible.
 
 Both are direct-labelled — the legend carries each series' current value and the
 strip labels its newest column — so nothing needs a hover to be read, which on a

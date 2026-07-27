@@ -217,7 +217,12 @@ describe("buildChartModel", () => {
 
     it("puts each column on the curve's x, so both panels share one time axis", () => {
       const model = buildChartModel(real);
-      model.bars.columns.forEach((c, i) => expect(c.x).toBe(model.points[i + 1].x));
+      // A column runs from the relevé it is measured against to the one it
+      // reports, which is the interval the movement happened in.
+      model.bars.columns.forEach((c, i) => {
+        expect(c.from).toBe(model.points[i].x);
+        expect(c.to).toBe(model.points[i + 1].x);
+      });
     });
 
     it("scales to the best movement", () => {
@@ -268,26 +273,65 @@ describe("buildChartModel", () => {
       }
     });
 
-    it("narrows the columns rather than overlapping them on a long history", () => {
-      const short = buildChartModel(series(4)).bars;
-      const long = buildChartModel(series(60)).bars;
-      expect(long.width).toBeLessThan(short.width);
-      expect(long.width).toBeGreaterThan(0);
-      // Sized off the tightest gap, so the closest pair still clears.
-      const gaps = long.columns.slice(1).map((c, i) => c.x - long.columns[i].x);
-      expect(long.width).toBeLessThanOrEqual(Math.min(...gaps));
+    // The defect this replaced: a relevé carrying four days of movement drew the
+    // same column as one carrying a day, claiming four times the cadence it saw.
+    describe("a relevé that covers several days", () => {
+      const gapped = [
+        day("2026-07-01", 100, 200),
+        day("2026-07-02", 60, 170), // +40 in one day
+        day("2026-07-06", 20, 140), // +40, but over four
+      ];
+
+      it("draws the rate, so the same gain over more days is a lower column", () => {
+        const { bars } = buildChartModel(gapped);
+        const [fast, slow] = bars.columns;
+        expect(fast.gained).toBe(slow.gained);
+        expect(fast.rate).toBe(40);
+        expect(slow.rate).toBe(10);
+        expect(slow.height).toBeLessThan(fast.height);
+      });
+
+      it("spans the interval it measures, so the skipped days are the width", () => {
+        const { bars } = buildChartModel(gapped);
+        const [fast, slow] = bars.columns;
+        expect(slow.width).toBeGreaterThan(fast.width * 3);
+
+        // Area over the interval is the places gained, equal on both — the
+        // histogram reading. Measured on the bins rather than the drawn rects,
+        // since the surface gap between columns is a fixed width and so costs a
+        // narrow column proportionally more than a wide one.
+        const area = (c) => (c.to - c.from) * c.height;
+        expect(area(slow)).toBeCloseTo(area(fast), 6);
+      });
+
+      it("leaves the daily case untouched, where rate and gain are one number", () => {
+        const { bars } = buildChartModel(real);
+        expect(bars.columns.map((c) => c.rate)).toEqual([30, 71, 1]);
+      });
     });
 
-    it("sizes off the tightest gap when the workflow skipped days", () => {
-      // Two relevés a day apart, then one four days later: the wide gap must not
-      // set the width, or the close pair overlaps.
-      const { bars } = buildChartModel([
-        day("2026-07-01", 100, 200),
-        day("2026-07-02", 90, 190),
-        day("2026-07-06", 50, 150),
-      ]);
-      const tightest = bars.columns[1].x - bars.columns[0].x;
-      expect(bars.width).toBeLessThanOrEqual(tightest);
+    it("tiles the observed span without overlapping, at any density", () => {
+      for (const history of [real, series(4), series(60), series(9, { step: 3 })]) {
+        const { bars } = buildChartModel(history);
+        expect(bars.columns[0].left).toBeGreaterThanOrEqual(bars.from);
+        for (const [i, c] of bars.columns.entries()) {
+          expect(c.width).toBeGreaterThan(0);
+          if (i > 0) {
+            const previous = bars.columns[i - 1];
+            expect(c.left).toBeGreaterThanOrEqual(previous.left + previous.width);
+          }
+        }
+        const last = bars.columns[bars.columns.length - 1];
+        expect(last.left + last.width).toBeLessThanOrEqual(bars.to + 0.001);
+      }
+    });
+
+    it("stops the baseline where the relevés stop, not under the forecast", () => {
+      const model = buildChartModel(real);
+      expect(model.bars.from).toBe(model.points[0].x);
+      expect(model.bars.to).toBe(model.points[model.points.length - 1].x);
+      // Which is well short of the plot's right edge, where the projection runs.
+      expect(model.bars.to).toBeLessThan(CHART.w - CHART.right);
     });
   });
 
