@@ -126,7 +126,9 @@ describe("shippingEstimate", () => {
       day("2026-07-23", 1417, 1523),
       day("2026-07-24", 1417, 1503),
     ]);
-    expect(est).toEqual({ rate: 0, spanDays: 1, daysLeft: null, date: null });
+    expect(est).toEqual({ rate: 0, spanDays: 1, daysLeft: null, date: null, range: null });
+    // A flat fit negates to -0, which the card would print as "-0 place/jour".
+    expect(Object.is(est.rate, -0)).toBe(false);
   });
 
   it("gives no date when the queue moved backwards", () => {
@@ -184,8 +186,73 @@ describe("shippingEstimate", () => {
       );
       const est = shippingEstimate(gapped);
       expect(est.spanDays).toBe(RATE_WINDOW_DAYS + 5);
-      // The rate stays honest: places gained divided by real elapsed days.
-      expect(est.rate).toBeCloseTo(70 / 12, 10);
+
+      // Not 70/12: that is the endpoint average, and this series is not linear
+      // in time — it gains ten places between consecutive snapshots whether they
+      // are a day or six days apart. The fit sees the two dense clusters and
+      // reads the flat stretch between them as the slowdown it is, so it lands
+      // below the endpoint figure rather than pretending the gap was productive.
+      expect(est.rate).toBeCloseTo(4.8513, 4);
+      expect(est.rate).toBeLessThan(70 / 12);
+    });
+  });
+
+  describe("rate fitting", () => {
+    it("ignores a spike at one end that the endpoint difference would follow", () => {
+      // Six days of a steady 10 places/day, then one bad relevé. Measuring from
+      // the endpoints alone reads 10 → (60-50)/6 ≈ 1.7 places/day and pushes the
+      // date out by years; the fit barely moves.
+      const steady = Array.from({ length: 7 }, (_, i) =>
+        day(iso(addDays(parseDay("2026-07-01"), i)), 100 - i * 10, 300 - i * 10)
+      );
+      const spiked = steady.with(6, day("2026-07-07", 50, 240));
+
+      expect(shippingEstimate(steady).rate).toBeCloseTo(10, 10);
+      expect(shippingEstimate(spiked).rate).toBeGreaterThan(7);
+    });
+
+    it("reports a range around the fit once a residual can be measured", () => {
+      const noisy = [
+        day("2026-07-01", 100, 300),
+        day("2026-07-02", 95, 295),
+        day("2026-07-03", 78, 278),
+        day("2026-07-04", 74, 274),
+      ];
+      const est = shippingEstimate(noisy);
+      // Bracketing, and the right way round: a faster queue ships sooner.
+      expect(est.range.earliest.getTime()).toBeLessThan(est.date.getTime());
+      expect(est.range.latest.getTime()).toBeGreaterThan(est.date.getTime());
+    });
+
+    it("offers no range on two snapshots, where the fit is exact by construction", () => {
+      // Zero residual is not zero uncertainty: with one degree of freedom used
+      // up per parameter there is nothing left to measure the spread with.
+      expect(shippingEstimate([day("2026-07-01", 100, 300), day("2026-07-02", 90, 290)]).range)
+        .toBeNull();
+    });
+
+    it("offers no range on a perfectly straight series", () => {
+      const straight = Array.from({ length: 5 }, (_, i) =>
+        day(iso(addDays(parseDay("2026-07-01"), i)), 100 - i * 10, 300 - i * 10)
+      );
+      expect(shippingEstimate(straight).range).toBeNull();
+    });
+
+    it("drops the late bound when the slow end of the range allows a standstill", () => {
+      // A queue that barely moves while our rank wobbles a few places either
+      // way. The fit still slopes down, but the spread around it covers a
+      // stalled queue, and the late bound would be "never" rather than a date.
+      const erratic = [
+        day("2026-07-01", 500, 700),
+        day("2026-07-02", 505, 705),
+        day("2026-07-03", 498, 698),
+        day("2026-07-04", 503, 703),
+        day("2026-07-05", 497, 697),
+      ];
+      const est = shippingEstimate(erratic);
+      expect(est.rate).toBeGreaterThan(0);
+      expect(est.range.latest).toBeNull();
+      expect(est.range.earliest).not.toBeNull();
     });
   });
 });

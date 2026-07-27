@@ -10,11 +10,13 @@ import { addDays, parseDay } from "../lib/domain.js";
 const day = (date, position, total) => ({ date, position, total });
 const iso = (d) => d.toISOString().slice(0, 10);
 
-// The three real snapshots in the repository.
+// The real snapshots in the repository: +30, +71, then +1 — the unevenness the
+// gains strip exists to show.
 const real = [
   day("2026-07-23", 1417, 1523),
   day("2026-07-24", 1387, 1503),
   day("2026-07-25", 1316, 1438),
+  day("2026-07-26", 1315, 1481),
 ];
 
 const series = (count, { from = "2026-07-01", step = 1, start = 1000, gain = 10 } = {}) =>
@@ -76,19 +78,19 @@ describe("buildChartModel", () => {
 
   it("maps one point per snapshot, carrying the source values", () => {
     const model = buildChartModel(real);
-    expect(model.points).toHaveLength(3);
-    expect(model.points.map((p) => p.position)).toEqual([1417, 1387, 1316]);
-    expect(model.points.map((p) => p.total)).toEqual([1523, 1503, 1438]);
+    expect(model.points).toHaveLength(4);
+    expect(model.points.map((p) => p.position)).toEqual([1417, 1387, 1316, 1315]);
+    expect(model.points.map((p) => p.total)).toEqual([1523, 1503, 1438, 1481]);
   });
 
   it("draws progress as a descending line, matching the caption", () => {
     const model = buildChartModel(real);
-    // The axis runs from the largest rank at the top down to zero at the
-    // baseline, so gaining places moves the line *down*: "plus bas = plus proche
-    // de l'expédition".
-    expect(model.points[2].y).toBeGreaterThan(model.points[0].y);
+    // The axis runs from the largest rank at the top down to the lowest tick at
+    // the baseline, so gaining places moves the line *down*: "plus bas = plus
+    // proche de l'expédition".
+    expect(model.points[model.points.length - 1].y).toBeGreaterThan(model.points[0].y);
     expect(model.y(model.lo)).toBeGreaterThan(model.y(model.hi));
-    expect(model.y(0)).toBeCloseTo(model.baselineY, 6);
+    expect(model.y(model.lo)).toBeCloseTo(model.baselineY, 6);
   });
 
   it("keeps the curve inside the plot area", () => {
@@ -124,14 +126,43 @@ describe("buildChartModel", () => {
   });
 
   describe("projection", () => {
-    it("extends the axis to zero and marks the target date", () => {
-      const model = buildChartModel(real);
-      // rate = (1417 - 1316) / 2 = 50.5 places/day, so 1316 places ≈ 27 days.
-      expect(iso(model.projection.date)).toBe("2026-08-21");
+    // Close enough to the front of the queue that the forecast fits: two days of
+    // history, 20 places left at 40/day, so the target lands one day out.
+    const nearlyThere = [day("2026-07-01", 100, 200), day("2026-07-03", 20, 120)];
+
+    it("runs to position zero and extends the axis there when it fits", () => {
+      const model = buildChartModel(nearlyThere);
+      expect(iso(model.projection.date)).toBe("2026-07-04");
+      expect(model.projection.clipped).toBe(false);
       expect(model.lo).toBe(0);
       expect(model.projection.y).toBe(model.y(0));
       // The forecast sits to the right of the last real snapshot.
-      expect(model.projection.x).toBeGreaterThan(model.points[2].x);
+      expect(model.projection.x).toBeGreaterThan(model.points[1].x);
+    });
+
+    it("never squeezes the data below its share of the width", () => {
+      // The case this floor exists for: three relevés and a month-long forecast
+      // used to leave the real curve 7% of the plot.
+      const model = buildChartModel(real);
+      const drawn = model.points[model.points.length - 1].x - model.points[0].x;
+      expect(drawn / model.geom.plotW).toBeCloseTo(0.55, 6);
+    });
+
+    it("clips at the right edge, keeping the real target date for the caption", () => {
+      const model = buildChartModel(real);
+      // The fit reads 37.7 places/day, so 1315 places ≈ 35 days — far past the edge.
+      expect(model.projection.clipped).toBe(true);
+      expect(iso(model.projection.target)).toBe("2026-08-30");
+      expect(iso(model.projection.date)).not.toBe("2026-08-30");
+      expect(model.projection.x).toBeCloseTo(CHART.w - CHART.right, 6);
+    });
+
+    it("scales the axis to the clipped forecast, not down to an off-screen zero", () => {
+      const model = buildChartModel(real);
+      // Reaching for 0 would spend most of the height on ranks never drawn.
+      expect(model.lo).toBeGreaterThan(1000);
+      expect(model.projection.y).toBeGreaterThan(model.points[model.points.length - 1].y);
+      expect(model.projection.y).toBeLessThanOrEqual(model.baselineY);
     });
 
     it("is absent when the queue is not moving, and the axis stays on the data", () => {
@@ -149,6 +180,158 @@ describe("buildChartModel", () => {
         day("2026-07-02", 999_999, 999_999),
       ]);
       expect(model.projection).toBeNull();
+    });
+  });
+
+  describe("queue size, the second series", () => {
+    it("shares the position's axis, so the gap between the lines means something", () => {
+      const model = buildChartModel(real);
+      // Both are orders on one scale: the vertical distance between the two
+      // lines is the orders sitting behind us, which is the reason to draw it.
+      expect(model.totalPoints.map((p) => p.total)).toEqual([1523, 1503, 1438, 1481]);
+      expect(model.totalPoints[0].y).toBe(model.y(1523));
+      expect(model.totalPoints.map((p) => p.x)).toEqual(model.points.map((p) => p.x));
+    });
+
+    it("raises the axis to hold the queue, which is always above the rank", () => {
+      const model = buildChartModel(real);
+      expect(model.hi).toBeGreaterThanOrEqual(1523);
+      for (const p of model.totalPoints) {
+        expect(p.y).toBeGreaterThanOrEqual(CHART.top);
+        expect(p.y).toBeLessThanOrEqual(model.baselineY);
+      }
+    });
+
+    it("draws the queue above the position, since a rank cannot exceed its queue", () => {
+      const model = buildChartModel(real);
+      model.totalPoints.forEach((p, i) => expect(p.y).toBeLessThan(model.points[i].y));
+    });
+  });
+
+  describe("the gains strip", () => {
+    it("draws one column per movement, not per snapshot", () => {
+      const { bars } = buildChartModel(real);
+      expect(bars.columns).toHaveLength(3);
+      expect(bars.columns.map((c) => c.gained)).toEqual([30, 71, 1]);
+    });
+
+    it("puts each column on the curve's x, so both panels share one time axis", () => {
+      const model = buildChartModel(real);
+      // A column runs from the relevé it is measured against to the one it
+      // reports, which is the interval the movement happened in.
+      model.bars.columns.forEach((c, i) => {
+        expect(c.from).toBe(model.points[i].x);
+        expect(c.to).toBe(model.points[i + 1].x);
+      });
+    });
+
+    it("scales to the best movement", () => {
+      const { bars } = buildChartModel(real);
+      expect(bars.max).toBe(71);
+      const best = bars.columns.find((c) => c.gained === 71);
+      expect(best.height).toBeCloseTo(bars.geom.plotH, 6);
+      expect(best.y).toBeCloseTo(bars.geom.top, 6);
+    });
+
+    // Same rule as the axis rounding and for the same reason: 1 place out of 71
+    // is half a pixel, and erasing it hides the unevenness the strip exists for.
+    it("keeps a visible column for a movement of one place", () => {
+      const { bars } = buildChartModel(real);
+      expect(bars.columns.find((c) => c.gained === 1).height).toBeGreaterThanOrEqual(1.5);
+    });
+
+    it("gives a standstill no column at all", () => {
+      const { bars } = buildChartModel([
+        day("2026-07-01", 500, 900),
+        day("2026-07-02", 500, 880),
+      ]);
+      expect(bars.columns[0].height).toBe(0);
+    });
+
+    it("hangs a loss below the baseline", () => {
+      const { bars } = buildChartModel([
+        day("2026-07-01", 100, 200),
+        day("2026-07-02", 90, 190),
+        day("2026-07-03", 110, 215),
+      ]);
+      const loss = bars.columns.find((c) => c.gained === -20);
+      expect(loss.gained).toBe(-20);
+      expect(loss.y).toBeCloseTo(bars.baselineY, 6);
+      expect(loss.y + loss.height).toBeGreaterThan(bars.baselineY);
+      // And the winning column still hangs off the same baseline, upwards.
+      const gain = bars.columns.find((c) => c.gained === 10);
+      expect(gain.y).toBeLessThan(bars.baselineY);
+    });
+
+    it("keeps every column inside the strip", () => {
+      for (const history of [real, series(60), series(9, { step: 3 })]) {
+        const { bars } = buildChartModel(history);
+        for (const c of bars.columns) {
+          expect(c.y).toBeGreaterThanOrEqual(bars.geom.top - 0.001);
+          expect(c.y + c.height).toBeLessThanOrEqual(bars.geom.top + bars.geom.plotH + 0.001);
+        }
+      }
+    });
+
+    // The defect this replaced: a relevé carrying four days of movement drew the
+    // same column as one carrying a day, claiming four times the cadence it saw.
+    describe("a relevé that covers several days", () => {
+      const gapped = [
+        day("2026-07-01", 100, 200),
+        day("2026-07-02", 60, 170), // +40 in one day
+        day("2026-07-06", 20, 140), // +40, but over four
+      ];
+
+      it("draws the rate, so the same gain over more days is a lower column", () => {
+        const { bars } = buildChartModel(gapped);
+        const [fast, slow] = bars.columns;
+        expect(fast.gained).toBe(slow.gained);
+        expect(fast.rate).toBe(40);
+        expect(slow.rate).toBe(10);
+        expect(slow.height).toBeLessThan(fast.height);
+      });
+
+      it("spans the interval it measures, so the skipped days are the width", () => {
+        const { bars } = buildChartModel(gapped);
+        const [fast, slow] = bars.columns;
+        expect(slow.width).toBeGreaterThan(fast.width * 3);
+
+        // Area over the interval is the places gained, equal on both — the
+        // histogram reading. Measured on the bins rather than the drawn rects,
+        // since the surface gap between columns is a fixed width and so costs a
+        // narrow column proportionally more than a wide one.
+        const area = (c) => (c.to - c.from) * c.height;
+        expect(area(slow)).toBeCloseTo(area(fast), 6);
+      });
+
+      it("leaves the daily case untouched, where rate and gain are one number", () => {
+        const { bars } = buildChartModel(real);
+        expect(bars.columns.map((c) => c.rate)).toEqual([30, 71, 1]);
+      });
+    });
+
+    it("tiles the observed span without overlapping, at any density", () => {
+      for (const history of [real, series(4), series(60), series(9, { step: 3 })]) {
+        const { bars } = buildChartModel(history);
+        expect(bars.columns[0].left).toBeGreaterThanOrEqual(bars.from);
+        for (const [i, c] of bars.columns.entries()) {
+          expect(c.width).toBeGreaterThan(0);
+          if (i > 0) {
+            const previous = bars.columns[i - 1];
+            expect(c.left).toBeGreaterThanOrEqual(previous.left + previous.width);
+          }
+        }
+        const last = bars.columns[bars.columns.length - 1];
+        expect(last.left + last.width).toBeLessThanOrEqual(bars.to + 0.001);
+      }
+    });
+
+    it("stops the baseline where the relevés stop, not under the forecast", () => {
+      const model = buildChartModel(real);
+      expect(model.bars.from).toBe(model.points[0].x);
+      expect(model.bars.to).toBe(model.points[model.points.length - 1].x);
+      // Which is well short of the plot's right edge, where the projection runs.
+      expect(model.bars.to).toBeLessThan(CHART.w - CHART.right);
     });
   });
 
@@ -201,9 +384,19 @@ describe("buildChartModel", () => {
     });
 
     it("drops the middle label when the last snapshot would collide with an end", () => {
-      const model = buildChartModel(real);
+      // A projection that fits pushes the last snapshot hard left; with the
+      // width floor in place it takes a long series to get there.
+      const model = buildChartModel([...series(30), day("2026-08-01", 5, 400)]);
       expect(model.dateMarks.map((m) => m.anchor)).toEqual(["start", "end"]);
-      expect(iso(model.dateMarks[1].date)).toBe("2026-08-21");
+    });
+
+    it("labels the clipped edge with the date the axis actually stops at", () => {
+      const model = buildChartModel(real);
+      const end = model.dateMarks[model.dateMarks.length - 1];
+      expect(end.anchor).toBe("end");
+      expect(end.date.getTime()).toBe(model.projection.date.getTime());
+      // Not the shipping estimate: that one is off the chart.
+      expect(end.date.getTime()).toBeLessThan(model.projection.target.getTime());
     });
 
     it("anchors the last snapshot at the right edge when there is no projection", () => {

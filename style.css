@@ -7,6 +7,13 @@
   --good: #16a34a;
   --bad: #dc2626;
   --border: #e5e7eb;
+  /* The two lines share one scale, so the pair has to be separable by anyone:
+     validated as a categorical palette against this surface (lightness band,
+     chroma floor, CVD separation, normal-vision floor, 3:1 contrast). Slot 1 is
+     the accent the position line already wears, so the hue keeps meaning the
+     same thing across the page. */
+  --series-position: #2563eb;
+  --series-total: #eb6834;
   color-scheme: light dark;
 }
 
@@ -22,6 +29,10 @@
     --good: #34d058;
     --bad: #ff6b6b;
     --border: #262b35;
+    /* Re-stepped for the dark surface and validated as a set there, not flipped:
+       the light steps sit outside the dark band. */
+    --series-position: #4f92fb;
+    --series-total: #d95926;
   }
 }
 
@@ -81,21 +92,33 @@ header h1 {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  /* The two values are deliberately different sizes now, so the labels are what
+     line up: pushed to the bottom of both cards rather than trailing each value. */
+  justify-content: space-between;
 }
 
 .stat--primary {
-  flex: 1.4;
+  flex: 1.6;
 }
 
+/* The position is the one number this page exists for, so it is the only hero
+   figure on it. The queue size is what that rank is read against — the same call
+   the chart makes, where one line is filled and labelled and the other is thin
+   context. Two values at the same size said the opposite.
+
+   Proportional figures, not tabular: tabular gives every digit the width of a
+   zero, which reads loose at display sizes. It is kept where numbers stack into
+   a column and have to align — the table, the axis ticks. */
 .stat-value {
-  font-size: 2.4rem;
+  font-size: 1.5rem;
   font-weight: 700;
-  font-variant-numeric: tabular-nums;
   line-height: 1.1;
 }
 
 .stat--primary .stat-value {
   color: var(--accent);
+  /* Never wider than the card: at 320px the hero would otherwise overflow it. */
+  font-size: clamp(2.2rem, 12vw, 3rem);
 }
 
 .stat-label {
@@ -122,7 +145,6 @@ header h1 {
   display: block;
   font-size: 1.3rem;
   font-weight: 700;
-  font-variant-numeric: tabular-nums;
 }
 
 .delta-value.positive { color: var(--good); }
@@ -157,7 +179,6 @@ header h1 {
   font-weight: 700;
   line-height: 1.2;
   color: var(--accent);
-  font-variant-numeric: tabular-nums;
 }
 
 /* Intl renders "vendredi 21 août 2026": uppercase the first word only, since
@@ -186,7 +207,6 @@ header h1 {
 }
 
 #chart {
-  position: relative;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -269,6 +289,94 @@ header h1 {
 }
 
 .chart-hit { fill: transparent; }
+
+/* The tooltip anchors to the plot rather than to the card, so it can never park
+   itself over the legend above it. */
+.chart-plot-wrap { position: relative; }
+
+/* The legend carries the current value of each series, so both are readable
+   without a hover — which on a phone means without a press-and-hold. */
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding: 2px 2px 8px;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-item strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.legend-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.legend-dot[data-series="position"] { background: var(--series-position); }
+.legend-dot[data-series="total"] { background: var(--series-total); }
+
+/* Queue size: same axis, same unit, second hue. Thinner and unfilled — it is the
+   context the position line is read against, not the subject. */
+.chart-total-line {
+  fill: none;
+  stroke: var(--series-total);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Places gained per relevé, on the curve's x axis: one more panel of the same
+   chart, so it shares the card rather than sitting in its own box. */
+.chart-bars {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 2px;
+  border-top: 1px solid var(--border);
+  padding-top: 2px;
+}
+
+.bar {
+  fill: var(--series-position);
+  opacity: 0.6;
+  transition: opacity 0.12s ease;
+}
+
+/* Losing ground is rare and worth seeing; it is a status, not a third series. */
+.bar.is-loss { fill: var(--bad); }
+.bar.is-active { opacity: 1; }
+
+.bar-baseline {
+  stroke: var(--border);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+
+.bar-label {
+  fill: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar { transition: none; }
+}
 
 .chart-crosshair,
 .chart-cursor {

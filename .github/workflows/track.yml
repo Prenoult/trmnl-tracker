@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  issues: write # the failure report below
 
 # A manual run overlapping the cron would have two jobs committing and pushing the
 # same file. Queue them instead.
@@ -36,3 +37,37 @@ jobs:
           git add data/history.json
           git diff --cached --quiet && echo "No change" || git commit -m "Update queue history"
           git push
+
+      # A scrape that stops working is the expensive failure: the series just
+      # stops growing, and nothing says so until someone opens the app and reads
+      # the staleness banner. GitHub does email the owner when a scheduled run
+      # fails, which is easy to miss among the rest; an issue is not. One issue
+      # is kept open and commented on, so a week of failures is one thread rather
+      # than seven, and closing it is what arms the next report.
+      - name: Report the failure as an issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          body="The daily queue scrape failed on $(date -u +%F) — [run log]($RUN_URL).
+
+          The app now shows the last successful snapshot, and the staleness
+          banner appears once it is more than two days old. Nothing is written to
+          \`data/history.json\` on a failed run, so the series is intact.
+
+          Closing this issue arms the next report."
+
+          gh label create tracker-failure --color b60205 \
+            --description "The daily scrape workflow is failing" 2>/dev/null || true
+
+          existing=$(gh issue list --label tracker-failure --state open \
+            --limit 1 --json number --jq '.[0].number // empty')
+
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "Daily queue scrape is failing" \
+              --label tracker-failure --body "$body"
+          fi

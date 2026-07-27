@@ -5,7 +5,7 @@
 import { ORDER_NUMBER } from "./lib/config.js";
 import { parseDay, daysBetween, plural, movement, shippingEstimate } from "./lib/domain.js";
 import { buildChartModel } from "./lib/chart-model.js";
-import { staleness } from "./lib/history.js";
+import { parseHistory, staleness } from "./lib/history.js";
 
 // The UI is French; keep every Intl formatter on one locale.
 const LOCALE = "fr-FR";
@@ -13,6 +13,10 @@ const LOCALE = "fr-FR";
 const fmt = new Intl.NumberFormat(LOCALE);
 const rateFmt = new Intl.NumberFormat(LOCALE, { maximumFractionDigits: 1 });
 const dateFmt = new Intl.DateTimeFormat(LOCALE, { day: "numeric", month: "short" });
+// Abbreviated French months carry a trailing period ("10 sept."), which collides
+// with the full stop ending a sentence. Prose gets the unabbreviated month; the
+// axis labels and the table, where space is tight, keep the short one.
+const proseDateFmt = new Intl.DateTimeFormat(LOCALE, { day: "numeric", month: "long" });
 const longDateFmt = new Intl.DateTimeFormat(LOCALE, {
   weekday: "long",
   day: "numeric",
@@ -73,7 +77,54 @@ function renderEta(history) {
   dateEl.textContent = longDateFmt.format(est.date);
   subEl.textContent =
     `Dans environ ${fmt.format(est.daysLeft)} jour${plural(est.daysLeft)}, ` +
-    `au rythme de ${rateFmt.format(est.rate)} place${plural(est.rate)}/jour observé ${window}.`;
+    `au rythme de ${rateFmt.format(est.rate)} place${plural(est.rate)}/jour observé ${window}.` +
+    spread(est.range);
+}
+
+// The date above is a single day computed from a fitted line; the relevés are
+// nowhere near that regular. Naming how far the fit itself can slide keeps the
+// headline from reading as a promise.
+function spread(range) {
+  if (!range) return "";
+  if (range.earliest && range.latest) {
+    return ` Selon l'irrégularité des relevés : entre le ${proseDateFmt.format(range.earliest)} et le ${proseDateFmt.format(range.latest)}.`;
+  }
+  if (range.earliest) {
+    return ` Au mieux le ${proseDateFmt.format(range.earliest)} ; les relevés sont trop irréguliers pour borner l'autre côté.`;
+  }
+  return "";
+}
+
+// The strip under the curve. Direct-labelled at the endpoint only: a number on
+// every column is noise, and every other value stays reachable through the hover
+// readout and the table.
+function barStrip(model) {
+  const { w, left } = model.geom;
+  const { columns, baselineY, max, from, to, geom } = model.bars;
+  const latest = columns[columns.length - 1];
+
+  const rects = columns
+    .map(
+      (c) =>
+        `<rect class="bar${c.rate < 0 ? " is-loss" : ""}" x="${c.left.toFixed(1)}" ` +
+        `y="${c.y.toFixed(1)}" width="${c.width.toFixed(1)}" height="${c.height.toFixed(1)}" rx="1.5" />`
+    )
+    .join("");
+
+  // Above the column, but never above the strip: a one-place gain sits a hair off
+  // the baseline, where the label has to clear the rule without riding out of the
+  // box. It carries the same surface halo as the curve's end label, so it stays
+  // legible wherever the column leaves it.
+  const labelY = Math.max(geom.top + 9, Math.min(latest.y, baselineY) - 8);
+
+  return `
+    <svg class="chart-bars" viewBox="0 0 ${w} ${geom.h}" role="img"
+      aria-label="Places gagnées par jour à chaque relevé, de ${rateFmt.format(Math.min(...columns.map((c) => c.rate)))} à ${rateFmt.format(max)}. Détail dans le tableau sous le graphique.">
+      <text class="chart-axis" x="${left - 8}" y="${geom.top + 4}" text-anchor="end">${rateFmt.format(max)}</text>
+      <line class="bar-baseline" x1="${from.toFixed(1)}" y1="${baselineY.toFixed(1)}" x2="${to.toFixed(1)}" y2="${baselineY.toFixed(1)}" />
+      ${rects}
+      <text class="bar-label" x="${(latest.left + latest.width / 2).toFixed(1)}" y="${labelY.toFixed(1)}" text-anchor="middle">${latest.rate > 0 ? "+" : ""}${rateFmt.format(latest.rate)}</text>
+    </svg>`;
 }
 
 function renderChart(history) {
@@ -96,6 +147,13 @@ function renderChart(history) {
     .join(" ");
   const area = `${line} L${last.x.toFixed(1)},${baselineY} L${left},${baselineY} Z`;
 
+  // Queue size, on the same axis: the gap between the two lines is the orders
+  // sitting behind us. No fill and a thinner stroke — it is context, the position
+  // is the subject.
+  const totalLine = model.totalPoints
+    .map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(1)},${p.y.toFixed(1)}`)
+    .join(" ");
+
   const grid = ticks
     .map(
       (t) =>
@@ -105,9 +163,13 @@ function renderChart(history) {
     .join("");
 
   // Dashed, de-emphasised and unfilled: this segment is a forecast, not data.
+  // The dot marks the arrival at position 0, so it is only drawn when the line
+  // actually gets there — clipped at the edge, it would mark nothing.
   const projectionMark = projection
     ? `<path class="chart-projection" d="M${last.x.toFixed(1)},${last.y.toFixed(1)} L${projection.x.toFixed(1)},${projection.y.toFixed(1)}" />` +
-      `<circle class="chart-target" cx="${projection.x.toFixed(1)}" cy="${projection.y.toFixed(1)}" r="3.5" />`
+      (projection.clipped
+        ? ""
+        : `<circle class="chart-target" cx="${projection.x.toFixed(1)}" cy="${projection.y.toFixed(1)}" r="3.5" />`)
     : "";
 
   const dateLabels = dateMarks
@@ -126,9 +188,20 @@ function renderChart(history) {
         .join("")
     : "";
 
+  const projectionLabel = !projection
+    ? ""
+    : projection.clipped
+      ? ` Projection en pointillés vers la position 0, atteinte le ${proseDateFmt.format(projection.target)}, au-delà du bord droit du graphique.`
+      : ` Projection en pointillés jusqu'à la position 0 le ${proseDateFmt.format(projection.target)}.`;
+
   el.innerHTML = `
-    <svg viewBox="0 0 ${w} ${h}" role="img" tabindex="0"
-      aria-label="Position dans la file du ${dateFmt.format(model.startDate)} au ${dateFmt.format(model.lastDate)}, de ${fmt.format(points[0].position)} à ${fmt.format(end.position)}.${projection ? ` Projection en pointillés jusqu'à la position 0 le ${dateFmt.format(projection.date)}.` : ""} Données détaillées dans le tableau sous le graphique.">
+    <div class="chart-legend">
+      <span class="legend-item"><span class="legend-dot" data-series="position"></span>Votre position<strong>#${fmt.format(end.position)}</strong></span>
+      <span class="legend-item"><span class="legend-dot" data-series="total"></span>Taille de la file<strong>${fmt.format(model.totalPoints[model.totalPoints.length - 1].total)}</strong></span>
+    </div>
+    <div class="chart-plot-wrap">
+    <svg class="chart-plot" viewBox="0 0 ${w} ${h}" role="img" tabindex="0"
+      aria-label="Deux courbes du ${dateFmt.format(model.startDate)} au ${dateFmt.format(model.lastDate)} : votre position, de ${fmt.format(points[0].position)} à ${fmt.format(end.position)}, et la taille de la file, de ${fmt.format(model.totalPoints[0].total)} à ${fmt.format(model.totalPoints[model.totalPoints.length - 1].total)}.${projectionLabel} Données détaillées dans le tableau sous le graphique.">
       <defs>
         <linearGradient id="chart-area" x1="0" y1="0" x2="0" y2="1">
           <stop class="chart-area-from" offset="0%" />
@@ -138,6 +211,7 @@ function renderChart(history) {
       <g class="chart-grid">${grid}</g>
       <path class="chart-fill" d="${area}" />
       ${projectionMark}
+      <path class="chart-total-line" d="${totalLine}" />
       <path class="chart-line" d="${line}" />
       ${dots}
       <line class="chart-crosshair" y1="${top}" y2="${top + plotH}" />
@@ -148,6 +222,8 @@ function renderChart(history) {
       <rect class="chart-hit" x="${left}" y="${top}" width="${plotW}" height="${plotH}" />
     </svg>
     <div class="chart-tooltip" hidden><span class="tt-date"></span><strong class="tt-value"></strong><span class="tt-meta"></span></div>
+    </div>
+    ${barStrip(model)}
   `;
 
   wireChartHover(el, history, model);
@@ -155,15 +231,22 @@ function renderChart(history) {
   tableWrap.hidden = false;
 
   document.getElementById("chart-caption").textContent =
-    "Position dans la file — plus bas = plus proche de l'expédition." +
-    (projection ? " En pointillés : projection jusqu'à votre tour." : "");
+    "Position dans la file — plus bas = plus proche de l'expédition. " +
+    "En dessous : les places gagnées par jour, chaque colonne couvrant l'intervalle qu'elle mesure." +
+    (!projection
+      ? ""
+      : projection.clipped
+        ? ` En pointillés : projection jusqu'à votre tour, le ${proseDateFmt.format(projection.target)}, hors du graphique.`
+        : " En pointillés : projection jusqu'à votre tour.");
 }
 
 // Crosshair + tooltip. The readout snaps to the nearest snapshot, so the reader
 // aims at a date rather than at a 2px line; arrow keys drive the same readout.
 function wireChartHover(el, history, model) {
   const { x, y, geom } = model;
-  const svg = el.querySelector("svg");
+  const svg = el.querySelector(".chart-plot");
+  const wrap = el.querySelector(".chart-plot-wrap");
+  const columns = [...el.querySelectorAll(".bar")];
   const crosshair = el.querySelector(".chart-crosshair");
   const cursor = el.querySelector(".chart-cursor");
   const tooltip = el.querySelector(".chart-tooltip");
@@ -182,6 +265,9 @@ function wireChartHover(el, history, model) {
     cursor.setAttribute("cx", x(i));
     cursor.setAttribute("cy", y(entry.position));
     svg.classList.add("is-active");
+    // The column for this relevé is the same reading as the crosshair, so it
+    // lights up with it rather than carrying a second hover of its own.
+    columns.forEach((rect, c) => rect.classList.toggle("is-active", c === i - 1));
 
     // textContent throughout: never build this markup by string concatenation.
     dateEl.textContent = dateFmt.format(parseDay(entry.date));
@@ -195,12 +281,13 @@ function wireChartHover(el, history, model) {
     tooltip.hidden = false;
     const half = tooltip.offsetWidth / 2;
     tooltip.style.left =
-      x(i) / geom.w < 0.5 ? `${el.clientWidth - half - 4}px` : `${half + 4}px`;
+      x(i) / geom.w < 0.5 ? `${wrap.clientWidth - half - 4}px` : `${half + 4}px`;
   }
 
   function hide() {
     active = null;
     svg.classList.remove("is-active");
+    for (const rect of columns) rect.classList.remove("is-active");
     tooltip.hidden = true;
   }
 
@@ -240,8 +327,13 @@ function renderChartTable(history) {
     const previous = i > 0 ? movement(history[i - 1], entry) : null;
     const row = document.createElement("tr");
 
+    // The row covers the interval since the previous relevé, so a skipped day has
+    // to show here too — the strip encodes it as width, and this table is what
+    // stands in for the strip when the figures are read rather than looked at.
+    const span = previous && previous.days > 1 ? ` (${previous.days} j)` : "";
+
     for (const value of [
-      dateFmt.format(parseDay(entry.date)),
+      dateFmt.format(parseDay(entry.date)) + span,
       `#${fmt.format(entry.position)}`,
       fmt.format(entry.total),
       previous ? `${previous.gained > 0 ? "+" : ""}${fmt.format(previous.gained)}` : "–",
@@ -255,15 +347,31 @@ function renderChartTable(history) {
   }
 }
 
+// parseHistory is the same gate the scraper writes through, so a file that would
+// render as NaN on every card is rejected here instead. Without it, an HTTP error
+// page or a half-written file read as "no data yet" — or worse, as data.
+async function loadHistory() {
+  const res = await fetch("data/history.json", { cache: "no-store" });
+  if (!res.ok) throw new Error(`data/history.json: HTTP ${res.status}`);
+  return parseHistory(await res.text());
+}
+
 async function main() {
   document.getElementById("order-number").textContent = ORDER_NUMBER;
 
   let history;
   try {
-    const res = await fetch("data/history.json", { cache: "no-store" });
-    history = await res.json();
-  } catch {
-    history = [];
+    history = await loadHistory();
+  } catch (err) {
+    // An unreadable file is not an empty one, and saying so is the difference
+    // between "come back tomorrow" and "something is broken, go look".
+    console.error(err);
+    const el = document.createElement("p");
+    el.className = "empty-state";
+    el.textContent =
+      "Données de suivi illisibles ou inaccessibles. Le détail est dans la console.";
+    document.getElementById("summary").replaceChildren(el);
+    return;
   }
 
   if (!history.length) {

@@ -56,9 +56,34 @@ describe("service worker precache list", () => {
     expect(assets).toContain(ref);
   });
 
+  it.each(JSON.parse(read("manifest.json")).icons.map((icon) => icon.src))(
+    "covers %s, declared in the manifest",
+    (src) => {
+      expect(assets).toContain(src);
+    }
+  );
+
   it("lists only files that exist", () => {
     const missing = assets.filter((a) => a !== "./" && !existsSync(path.join(ROOT, a)));
     expect(missing).toEqual([]);
+  });
+
+  // Nothing else catches this: an SVG apple-touch-icon is not an error, iOS just
+  // ignores the tag and puts a screenshot of the page on the home screen — and
+  // the README tells you to install the app that way.
+  it("declares an apple-touch-icon iOS will actually use", () => {
+    const tag = read("index.html").match(/<link rel="apple-touch-icon"[^>]*>/)?.[0];
+    expect(tag).toBeDefined();
+
+    const href = tag.match(/href="([^"]+)"/)[1];
+    expect(href).toMatch(/\.png$/);
+
+    // PNG magic, then the IHDR width and height as big-endian 32-bit ints.
+    const bytes = readFileSync(path.join(ROOT, href));
+    expect(bytes.subarray(1, 4).toString()).toBe("PNG");
+    expect(bytes.readUInt32BE(16)).toBe(180);
+    expect(bytes.readUInt32BE(20)).toBe(180);
+    expect(tag).toContain('sizes="180x180"');
   });
 
   it("does not ship the scraper to the browser", () => {

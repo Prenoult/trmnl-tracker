@@ -15,7 +15,9 @@ and progress.
 - [`index.html`](index.html) is a small web app (PWA) that reads
   `data/history.json` and shows: current position, queue size, places gained/lost
   since the previous snapshot, orders added to the queue, an estimated shipping
-  date and a progress chart. Its UI is in French.
+  date and a progress chart. Its UI is in French. It validates the file through
+  the same `parseHistory` gate the scraper writes through, so an HTTP error page
+  or a half-written file says so instead of rendering `NaN` on every card.
 
 No server to run: everything is static and can be hosted for free on GitHub
 Pages.
@@ -32,12 +34,47 @@ series:
   left the queue ahead of us (it is FIFO).
 - **orders added** = `queue delta + places gained`.
 - **estimated shipping date** = `snapshot date + position / rate`, where the rate
-  is the places gained per day over the last 7 snapshots (window configurable
-  through `RATE_WINDOW_DAYS` in [`lib/config.js`](lib/config.js)). A sliding
-  window rather than the average since day one, so the estimate stays honest if
-  the shipping cadence changes. Note the window counts snapshots, not calendar
-  days: when the workflow skips a day it covers the same 7 points spread over more
-  time, and the reported span reflects the real elapsed days.
+  is the least-squares slope of position against date over the last 7 snapshots
+  (window configurable through `RATE_WINDOW_DAYS` in
+  [`lib/config.js`](lib/config.js)). A sliding window rather than the average
+  since day one, so the estimate stays honest if the shipping cadence changes,
+  and a fit rather than the difference between the two ends of that window, which
+  gave the snapshots in between no vote and let a single noisy relevé move the
+  date by weeks. Note the window counts snapshots, not calendar days: when the
+  workflow skips a day it covers the same 7 points spread over more time, and the
+  reported span reflects the real elapsed days.
+- **the range around that date** comes from the standard error of the fitted
+  slope: one standard error either side of the rate, turned back into dates. It
+  needs three snapshots to exist at all — on two points the fit is exact and the
+  uncertainty is unknown, not zero — and its late bound disappears when the slow
+  end of the range allows a stalled queue, because "never" is not a date. The
+  headline date is a single day computed from a fitted line; the range is what
+  keeps it from reading as a promise.
+
+The chart is three panels on one time axis, because the position curve alone
+answers neither of the questions the estimate raises:
+
+- **the queue size** is drawn as a second line on the *same* y-axis. Both are
+  orders, and a rank never exceeds the queue holding it, so one scale is honest —
+  and it has to be, because the reading is the *gap* between the two lines, which
+  is the orders sitting behind us. Two y-scales would be a dual axis, and the gap
+  would stop meaning anything.
+- **the places gained per day** are columns under the curve, on that same x
+  mapping. The curve is cumulative, so it smooths exactly what the estimate rests
+  on: a relevé that gained one place and one that gained seventy read as much the
+  same slope. The strip is the evidence behind the estimate's range.
+
+  Each column spans the interval it measures and its height is the *rate*, so its
+  area is the places gained — a histogram over uneven bins. Where every relevé is
+  a day apart the rate and the gain are the same number and it reads as a plain
+  column chart; where the workflow skipped days, one relevé carries several days
+  of movement, and a column the height of a normal one would claim a cadence that
+  never happened. A skipped day is now the one thing on the page that is *wider*
+  rather than invisible.
+
+Both are direct-labelled — the legend carries each series' current value and the
+strip labels its newest column — so nothing needs a hover to be read, which on a
+phone means nothing needs a press-and-hold.
 
 The arithmetic lives in [`lib/`](lib/) rather than in the page, so it can be
 tested without a browser:
@@ -71,9 +108,35 @@ tested without a browser:
    `data/history.json`).
 4. The app will be available at `https://<your-user>.github.io/trmnl-tracker/`.
    Open that link on your phone, then **Share → Add to Home Screen** (Safari) to
-   install it as a real app.
+   install it as a real app. The home-screen icon is `icon-180.png`: iOS ignores
+   an SVG `apple-touch-icon` and substitutes a screenshot of the page, so both
+   PNGs are committed rather than generated at deploy time.
 5. The workflow runs automatically every day. To take a snapshot right away
    without waiting: **Actions** tab → *Track queue position* → **Run workflow**.
+
+## When it breaks
+
+The scraper separates the two ways trmnl.com can let it down, because they call
+for opposite responses:
+
+- **a bad minute** — a dropped connection, a 429, a 5xx — is retried three times
+  with an exponential backoff. The run happens once a day, so waiting a few
+  seconds is always better than losing a snapshot to a blip.
+- **a reworded page** answers 200 with markup the regexes no longer match. That
+  one is not retried: it fails the run, and `validateSnapshot` is there for the
+  subtler version where a half-matching regex yields a plausible-looking number.
+
+Either way, a failed run writes nothing: `data/history.json` keeps whatever it
+had. The workflow then opens an issue labelled `tracker-failure` (or comments on
+the open one, so a week of failures is one thread), and the app shows a banner
+once the newest snapshot is more than `STALE_AFTER_DAYS` old rather than
+presenting a stale position as current.
+
+One failure mode has no alarm: GitHub disables scheduled workflows on public
+repositories after 60 days without repository activity, and it is not documented
+whether the workflow's own daily commit resets that clock. A disabled workflow
+does not fail, so no issue is opened — the staleness banner in the app is what
+catches it. If the tracking ever stops quietly, check the **Actions** tab first.
 
 ## Tracking a different order
 

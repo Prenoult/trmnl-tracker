@@ -10,6 +10,7 @@ import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 
 import {
+  REQUEST_ATTEMPTS,
   STATUS_ATTEMPTS,
   cookieHeader,
   fetchQueueStatus,
@@ -30,9 +31,12 @@ const statusChecking = fixture("status-checking.html");
 const CSRF = "Xq7pLm3nRt9vBc2wYh5jKd8sFa1gZe4u";
 const TOKEN = "4f3a9c1e8b7d206f5a4e3c2b1d0f9e8a";
 
-// Minimal stand-in for a fetch Response: only the two things lib/tracker.js reads.
-function fakeResponse(body, { cookies = [], location = null } = {}) {
+// Minimal stand-in for a fetch Response: only the three things lib/tracker.js
+// reads. A real response always carries a status, so the default is 200 rather
+// than absent.
+function fakeResponse(body, { cookies = [], location = null, status = 200 } = {}) {
   return {
+    status,
     headers: {
       getSetCookie: () => cookies,
       get: (name) => (name.toLowerCase() === "location" ? location : null),
@@ -224,6 +228,97 @@ describe("fetchQueueStatus", () => {
       /never returned a queue position/
     );
     expect(calls.filter((c) => c.url.includes("status?token="))).toHaveLength(STATUS_ATTEMPTS);
+  });
+
+  // The distinction the run depends on: a bad minute at trmnl.com is worth
+  // waiting out, a reworded page is not, and before the status was checked both
+  // arrived as "Could not find CSRF token".
+  describe("transient failures", () => {
+    // Answers with the given statuses in order, then serves the real flow.
+    function flaky(statuses) {
+      const base = stub();
+      const queue = [...statuses];
+      const waits = [];
+      return {
+        ...base,
+        waits,
+        sleep: async (ms) => void waits.push(ms),
+        fetchImpl: async (url, options) => {
+          const status = queue.shift();
+          if (status !== undefined) return fakeResponse("<html>error</html>", { status });
+          return base.fetchImpl(url, options);
+        },
+      };
+    }
+
+    it("waits out a 503 and completes on the retry", async () => {
+      const { fetchImpl, sleep, waits } = flaky([503]);
+      await expect(fetchQueueStatus("51230", { fetchImpl, sleep })).resolves.toEqual({
+        position: 1316,
+        total: 1438,
+      });
+      expect(waits[0]).toBeGreaterThan(0);
+    });
+
+    it("waits out a rate limit", async () => {
+      const { fetchImpl, sleep } = flaky([429]);
+      await expect(fetchQueueStatus("51230", { fetchImpl, sleep })).resolves.toMatchObject({
+        position: 1316,
+      });
+    });
+
+    it("backs off further on each attempt", async () => {
+      const { fetchImpl, sleep, waits } = flaky([503, 503]);
+      await fetchQueueStatus("51230", { fetchImpl, sleep });
+      expect(waits[1]).toBeGreaterThan(waits[0]);
+    });
+
+    it("gives up after the attempt budget, naming the status", async () => {
+      const { calls, fetchImpl, sleep } = flaky(Array(REQUEST_ATTEMPTS).fill(503));
+      await expect(fetchQueueStatus("51230", { fetchImpl, sleep })).rejects.toThrow(
+        /tracker page: trmnl\.com answered HTTP 503/
+      );
+      expect(calls).toHaveLength(0); // never reached the real flow
+    });
+
+    it("does not retry a 404, which will not fix itself", async () => {
+      const { fetchImpl, sleep, waits } = flaky([404, 404, 404]);
+      await expect(fetchQueueStatus("51230", { fetchImpl, sleep })).rejects.toThrow(/HTTP 404/);
+      expect(waits).toEqual([]);
+    });
+
+    it("retries a dropped connection, which has no status to inspect", async () => {
+      const base = stub();
+      let thrown = false;
+      const fetchImpl = async (url, options) => {
+        if (!thrown) {
+          thrown = true;
+          throw new TypeError("fetch failed");
+        }
+        return base.fetchImpl(url, options);
+      };
+      await expect(
+        fetchQueueStatus("51230", { fetchImpl, sleep: async () => {} })
+      ).resolves.toMatchObject({ position: 1316 });
+    });
+
+    it("reports a network failure as the request failing, not as a missing token", async () => {
+      const fetchImpl = async () => {
+        throw new TypeError("fetch failed");
+      };
+      await expect(
+        fetchQueueStatus("51230", { fetchImpl, sleep: async () => {} })
+      ).rejects.toThrow(/tracker page: request failed \(fetch failed\)/);
+    });
+
+    it("still fails hard on a 200 whose markup lost the token", async () => {
+      // The failure the retries must not paper over: the page came back fine and
+      // no longer says what we parse. That has to stop the workflow.
+      const fetchImpl = async () => fakeResponse("<html><head></head></html>");
+      await expect(
+        fetchQueueStatus("51230", { fetchImpl, sleep: async () => {} })
+      ).rejects.toThrow(/CSRF token/);
+    });
   });
 
   it("surfaces a missing CSRF token without making the POST", async () => {
