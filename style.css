@@ -92,21 +92,33 @@ header h1 {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  /* The two values are deliberately different sizes now, so the labels are what
+     line up: pushed to the bottom of both cards rather than trailing each value. */
+  justify-content: space-between;
 }
 
 .stat--primary {
-  flex: 1.4;
+  flex: 1.6;
 }
 
+/* The position is the one number this page exists for, so it is the only hero
+   figure on it. The queue size is what that rank is read against — the same call
+   the chart makes, where one line is filled and labelled and the other is thin
+   context. Two values at the same size said the opposite.
+
+   Proportional figures, not tabular: tabular gives every digit the width of a
+   zero, which reads loose at display sizes. It is kept where numbers stack into
+   a column and have to align — the table, the axis ticks. */
 .stat-value {
-  font-size: 2.4rem;
+  font-size: 1.5rem;
   font-weight: 700;
-  font-variant-numeric: tabular-nums;
   line-height: 1.1;
 }
 
 .stat--primary .stat-value {
   color: var(--accent);
+  /* Never wider than the card: at 320px the hero would otherwise overflow it. */
+  font-size: clamp(2.2rem, 12vw, 3rem);
 }
 
 .stat-label {
@@ -133,7 +145,6 @@ header h1 {
   display: block;
   font-size: 1.3rem;
   font-weight: 700;
-  font-variant-numeric: tabular-nums;
 }
 
 .delta-value.positive { color: var(--good); }
@@ -168,7 +179,6 @@ header h1 {
   font-weight: 700;
   line-height: 1.2;
   color: var(--accent);
-  font-variant-numeric: tabular-nums;
 }
 
 /* Intl renders "vendredi 21 août 2026": uppercase the first word only, since
