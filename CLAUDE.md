@@ -82,8 +82,12 @@ a screenshot of the page).
 
 **Queue size is the *current* total, not a running total.** Comparing two totals
 gives the net balance, not the orders added. The identity is
-`added = queue delta + places gained`, where `gained = prev.position -
-curr.position`.
+`netAdded = queue delta + places gained`, where `gained = prev.position -
+curr.position`. `netAdded` is *net* and legitimately negative: it credits every
+departure from the queue to shipping at the front, so an order that leaves from
+behind the tracked position (cancellation, refund, recount) lands there with a
+minus sign. The copy on the page words the direction instead of printing a sign —
+"43 commandes retirées", never "−43 commandes ajoutées".
 
 **Changing `ORDER_NUMBER` means two places**: `lib/config.js` and the `env:` block
 in `.github/workflows/track.yml` (the workflow cannot import the constant).

@@ -14,7 +14,8 @@ and progress.
   runs that script every day at 07:00 UTC and commits the updated file.
 - [`index.html`](index.html) is a small web app (PWA) that reads
   `data/history.json` and shows: current position, queue size, places gained/lost
-  since the previous snapshot, orders added to the queue, an estimated shipping
+  since the previous snapshot, orders added to or removed from the queue behind
+  us, an estimated shipping
   date and a progress chart. Its UI is in French. It validates the file through
   the same `parseHistory` gate the scraper writes through, so an HTTP error page
   or a half-written file says so instead of rendering `NaN` on every card.
@@ -32,7 +33,14 @@ series:
 
 - **places gained** = `position(previous) − position(current)` — the orders that
   left the queue ahead of us (it is FIFO).
-- **orders added** = `queue delta + places gained`.
+- **net orders added** = `queue delta + places gained` — what happened *behind*
+  us. It is a net figure and it goes negative: the identity credits every
+  departure from the queue to shipping at the front, so an order that leaves from
+  behind us (cancelled, refunded, or dropped when TRMNL recounts) arrives here
+  with a minus sign. On 28 July the queue fell by 48 while we moved up only 5
+  places, which is −43: 43 orders left the queue without ever passing us. The
+  page therefore words the direction rather than printing a sign — "43 commandes
+  retirées", not "−43 commandes ajoutées".
 - **estimated shipping date** = `snapshot date + position / rate`, where the rate
   is the least-squares slope of position against date over the last 7 snapshots
   (window configurable through `RATE_WINDOW_DAYS` in

@@ -41,11 +41,13 @@
   <section class="deltas" id="deltas">
     <div class="delta-card">
       <span class="delta-value" id="delta-position">–</span>
-      <span class="delta-label">places gagnées <span class="delta-since"></span></span>
+      <!-- Both nouns are written by app.js: the figures run in two directions and
+           the wording, not a sign, is what says which one. -->
+      <span class="delta-label"><span class="delta-noun"></span> <span class="delta-since"></span></span>
     </div>
     <div class="delta-card">
       <span class="delta-value" id="delta-total">–</span>
-      <span class="delta-label">commandes ajoutées <span class="delta-since"></span></span>
+      <span class="delta-label"><span class="delta-noun"></span> <span class="delta-since"></span></span>
     </div>
   </section>
 
@@ -69,7 +71,7 @@
               <th scope="col">Position</th>
               <th scope="col">File</th>
               <th scope="col">Places</th>
-              <th scope="col">Ajoutées</th>
+              <th scope="col">Ajouts nets</th>
             </tr>
           </thead>
           <tbody id="chart-table-body"></tbody>
