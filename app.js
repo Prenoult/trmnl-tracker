@@ -24,17 +24,42 @@ const longDateFmt = new Intl.DateTimeFormat(LOCALE, {
   year: "numeric",
 });
 
-function setDelta(el, value, { invert = false, neutral = false } = {}) {
+// Both figures on the delta cards run in two directions, and a sign in front of a
+// noun that already names one of them contradicts itself: "-43 commandes
+// ajoutées" is what the page used to say the day 43 orders left the queue from
+// behind us. The direction lives in the wording here, so the figure itself is
+// printed unsigned.
+const direction = (n, up, down) => (n < 0 ? down(Math.abs(n)) : up(n));
+
+function setDelta(el, value, { invert = false, neutral = false, nouns } = {}) {
+  // The noun sits in its own span so this can rewrite it without disturbing the
+  // "depuis …" span that shares the label.
+  const nounEl = el.parentElement.querySelector(".delta-noun");
+
   if (value === null) {
     el.textContent = "–";
     el.className = "delta-value";
+    nounEl.textContent = nouns.up(0);
     return;
   }
+  // The colours still read the signed value: only the printed figure drops it.
   const good = !neutral && (invert ? value < 0 : value > 0);
   const bad = !neutral && (invert ? value > 0 : value < 0);
-  el.textContent = `${value > 0 ? "+" : ""}${fmt.format(value)}`;
+  el.textContent = fmt.format(Math.abs(value));
   el.className = "delta-value" + (good ? " positive" : bad ? " negative" : "");
+  nounEl.textContent = direction(value, nouns.up, nouns.down);
 }
+
+// Noun phrases for the two directions of each card, pluralised together with
+// their participle ("1 place gagnée", "43 commandes retirées").
+const places = {
+  up: (n) => `place${plural(n)} gagnée${plural(n)}`,
+  down: (n) => `place${plural(n)} perdue${plural(n)}`,
+};
+const orders = {
+  up: (n) => `commande${plural(n)} ajoutée${plural(n)}`,
+  down: (n) => `commande${plural(n)} retirée${plural(n)}`,
+};
 
 // A failed workflow silently skips a day, and every figure on the page would
 // otherwise read as today's.
@@ -273,8 +298,10 @@ function wireChartHover(el, history, model) {
     dateEl.textContent = dateFmt.format(parseDay(entry.date));
     valueEl.textContent = `#${fmt.format(entry.position)}`;
     metaEl.textContent =
-      (previous ? `${previous.gained > 0 ? "+" : ""}${fmt.format(previous.gained)} place${plural(previous.gained)} · ` : "") +
-      `file de ${fmt.format(entry.total)}`;
+      (previous
+        ? `${fmt.format(Math.abs(previous.gained))} ` +
+          `${direction(previous.gained, places.up, places.down)} · `
+        : "") + `file de ${fmt.format(entry.total)}`;
 
     // On a card this narrow the bubble is wide enough to sit on top of the point
     // it describes, so park it in the half the pointer is not in.
@@ -337,7 +364,7 @@ function renderChartTable(history) {
       `#${fmt.format(entry.position)}`,
       fmt.format(entry.total),
       previous ? `${previous.gained > 0 ? "+" : ""}${fmt.format(previous.gained)}` : "–",
-      previous ? `${previous.added > 0 ? "+" : ""}${fmt.format(previous.added)}` : "–",
+      previous ? `${previous.netAdded > 0 ? "+" : ""}${fmt.format(previous.netAdded)}` : "–",
     ]) {
       const cell = document.createElement("td");
       cell.textContent = value;
@@ -391,10 +418,15 @@ async function main() {
   document.getElementById("position").textContent = `#${fmt.format(latest.position)}`;
   document.getElementById("total").textContent = fmt.format(latest.total);
 
-  setDelta(document.getElementById("delta-position"), last ? last.gained : null);
-  // Orders joining the queue behind us do not change our position: the figure is
+  setDelta(document.getElementById("delta-position"), last ? last.gained : null, {
+    nouns: places,
+  });
+  // What happens behind us does not change our position: the figure is
   // informational, so it gets no good/bad colour.
-  setDelta(document.getElementById("delta-total"), last ? last.added : null, { neutral: true });
+  setDelta(document.getElementById("delta-total"), last ? last.netAdded : null, {
+    neutral: true,
+    nouns: orders,
+  });
 
   // The daily snapshot can skip a day (failed workflow), so name the reference date.
   const sinceLabel = !last
@@ -408,21 +440,34 @@ async function main() {
   renderChart(history);
 
   const totalGain = first.position - latest.position;
-  const totalAdded = history
+  const totalNetAdded = history
     .slice(1)
-    .reduce((sum, entry, i) => sum + movement(history[i], entry).added, 0);
+    .reduce((sum, entry, i) => sum + movement(history[i], entry).netAdded, 0);
   const daysTracked = Math.max(1, daysBetween(first.date, latest.date));
   const summaryEl = document.getElementById("summary");
+
+  // Both halves of this sentence can run backwards over a long enough series —
+  // the position can slip, and the queue can shed more orders behind us than it
+  // takes in — so each verb comes in the direction its figure went.
+  const gainClause = (n) =>
+    `vous avez ${n < 0 ? "perdu" : "gagné"} ` +
+    `<strong>${fmt.format(Math.abs(n))} place${plural(n)}</strong>`;
+  const flowClause = (n) =>
+    n === 0
+      ? "la file restait stable derrière vous."
+      : n > 0
+        ? `<strong>${fmt.format(n)} nouvelle${plural(n)} commande${plural(n)}</strong> ` +
+          `rejoignai${plural(n, "en")}t la file.`
+        : `<strong>${fmt.format(-n)} commande${plural(n)}</strong> ` +
+          `quittai${plural(n, "en")}t la file derrière vous.`;
 
   if (history.length < 2) {
     summaryEl.innerHTML = `Premier relevé enregistré le ${dateFmt.format(parseDay(latest.date))} — la progression s'affichera à partir de demain.`;
   } else {
     summaryEl.innerHTML =
-      `Depuis le ${dateFmt.format(parseDay(first.date))}, vous avez gagné ` +
-      `<strong>${fmt.format(totalGain)} place${plural(totalGain)}</strong> en ` +
+      `Depuis le ${dateFmt.format(parseDay(first.date))}, ${gainClause(totalGain)} en ` +
       `<strong>${daysTracked} jour${plural(daysTracked)}</strong> de suivi, pendant que ` +
-      `<strong>${fmt.format(totalAdded)} nouvelle${plural(totalAdded)} commande${plural(totalAdded)}</strong> ` +
-      `rejoignai${plural(totalAdded, "en")}t la file.`;
+      flowClause(totalNetAdded);
   }
 
   document.getElementById("last-updated").textContent =

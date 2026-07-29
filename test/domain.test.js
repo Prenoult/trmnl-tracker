@@ -67,24 +67,33 @@ describe("movement", () => {
     // up 30 places, so 10 orders did join behind us. Comparing totals alone would
     // report -20 "added", which is the net balance, not the arrivals.
     const result = movement(day("2026-07-23", 1417, 1523), day("2026-07-24", 1387, 1503));
-    expect(result).toEqual({ gained: 30, added: 10, days: 1 });
+    expect(result).toEqual({ gained: 30, netAdded: 10, days: 1 });
   });
 
   it("reports zero added when the queue shrinks by exactly what we gained", () => {
     const result = movement(day("2026-07-01", 100, 200), day("2026-07-02", 90, 190));
     expect(result.gained).toBe(10);
-    expect(result.added).toBe(0);
+    expect(result.netAdded).toBe(0);
   });
 
   it("adds arrivals on top of our gain when the queue grows", () => {
     const result = movement(day("2026-07-01", 100, 200), day("2026-07-02", 90, 210));
-    expect(result).toEqual({ gained: 10, added: 20, days: 1 });
+    expect(result).toEqual({ gained: 10, netAdded: 20, days: 1 });
+  });
+
+  it("goes negative when orders leave the queue from behind us", () => {
+    // Real snapshots again: the queue shed 48 orders while we moved up only 5
+    // places, so 43 of them left from *behind* our position — cancelled, refunded
+    // or dropped by a recount. The figure is a net flow, not an arrival count,
+    // and the page has to word it as such.
+    const result = movement(day("2026-07-27", 1313, 1506), day("2026-07-28", 1308, 1458));
+    expect(result).toEqual({ gained: 5, netAdded: -43, days: 1 });
   });
 
   it("reports a standstill as zero on both counts", () => {
     expect(movement(day("2026-07-01", 100, 200), day("2026-07-02", 100, 200))).toEqual({
       gained: 0,
-      added: 0,
+      netAdded: 0,
       days: 1,
     });
   });
@@ -92,7 +101,7 @@ describe("movement", () => {
   it("handles our position slipping backwards", () => {
     const result = movement(day("2026-07-01", 90, 200), day("2026-07-02", 100, 200));
     expect(result.gained).toBe(-10);
-    expect(result.added).toBe(-10);
+    expect(result.netAdded).toBe(-10);
   });
 
   it("reports the real gap when the daily workflow skipped days", () => {

@@ -3,7 +3,7 @@
 // app.js is an ES module: every file it imports has to be listed too, otherwise
 // the page loads from cache and then dies on a failed import. test/assets.test.js
 // enforces that.
-const CACHE = "trmnl-tracker-v6";
+const CACHE = "trmnl-tracker-v7";
 const ASSETS = [
   "./",
   "index.html",
