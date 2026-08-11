@@ -27,27 +27,53 @@
 
   <p class="stale-banner" id="stale-banner" role="status" hidden></p>
 
-  <section class="hero">
-    <div class="stat stat--primary">
-      <span class="stat-value" id="position">–</span>
-      <span class="stat-label">votre position</span>
+  <!-- One block for the present: the rank, what moved since the last relevé, and
+       the queue the rank sits in. These were four cards and a heading, which read
+       as four subjects when they are one — and cost a screen and a half of scroll
+       before the chart came into view. -->
+  <section class="now">
+    <div class="now-head">
+      <p class="now-position">
+        <span class="now-value" id="position">–</span>
+        <!-- The queue size reads as what the rank is measured against, which is
+             what it is. As its own hero figure it competed with the rank. -->
+        <span class="now-label">votre position sur <span id="total">–</span> commandes</span>
+      </p>
+      <div class="deltas" id="deltas">
+        <!-- One reference date for both figures: it was printed on each of them. -->
+        <p class="delta-since"></p>
+        <p class="delta-card">
+          <span class="delta-value" id="delta-position">–</span>
+          <!-- Both nouns are written by app.js: the figures run in two directions
+               and the wording, not a sign, is what says which one. -->
+          <span class="delta-label"><span class="delta-noun"></span></span>
+        </p>
+        <p class="delta-card">
+          <span class="delta-value" id="delta-total">–</span>
+          <span class="delta-label"><span class="delta-noun"></span></span>
+        </p>
+      </div>
     </div>
-    <div class="stat">
-      <span class="stat-value" id="total">–</span>
-      <span class="stat-label">commandes dans la file</span>
-    </div>
-  </section>
 
-  <section class="deltas" id="deltas">
-    <div class="delta-card">
-      <span class="delta-value" id="delta-position">–</span>
-      <!-- Both nouns are written by app.js: the figures run in two directions and
-           the wording, not a sign, is what says which one. -->
-      <span class="delta-label"><span class="delta-noun"></span> <span class="delta-since"></span></span>
-    </div>
-    <div class="delta-card">
-      <span class="delta-value" id="delta-total">–</span>
-      <span class="delta-label"><span class="delta-noun"></span> <span class="delta-since"></span></span>
+    <!-- The queue itself, drawn: the number says #1114, this says what 1114 looks
+         like from inside a queue of 1611. -->
+    <div class="queue-figure" id="queue-figure" hidden>
+      <div class="queue-ends">
+        <span>← Expédition</span>
+        <span>Fin de file</span>
+      </div>
+      <div id="queue"></div>
+      <div class="queue-counts">
+        <div class="queue-count">
+          <span class="queue-count-value" id="queue-ahead">–</span>
+          <span class="queue-count-label">devant vous</span>
+        </div>
+        <div class="queue-count queue-count--behind">
+          <span class="queue-count-value" id="queue-behind">–</span>
+          <span class="queue-count-label">derrière vous</span>
+        </div>
+      </div>
+      <p class="queue-caption" id="queue-caption"></p>
     </div>
   </section>
 
@@ -80,11 +106,14 @@
     </details>
   </section>
 
-  <section class="summary" id="summary"></section>
+  <!-- A footnote rather than a card: what it carries — the queue's flow behind us
+       over the whole series — is the one figure no drawing above shows, and a
+       bordered box gave it the weight of a headline it never had. -->
+  <p class="summary" id="summary"></p>
 
   <footer>
     <p id="last-updated"></p>
-    <p class="source">Source : <a href="https://trmnl.com/order-tracker" target="_blank" rel="noreferrer">trmnl.com/order-tracker</a> — mise à jour automatique chaque jour</p>
+    <p class="source">Source : <a href="https://trmnl.com/order-tracker" target="_blank" rel="noreferrer">trmnl.com/order-tracker</a> — mise à jour quotidienne</p>
   </footer>
 </main>
 

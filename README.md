@@ -15,8 +15,9 @@ and progress.
 - [`index.html`](index.html) is a small web app (PWA) that reads
   `data/history.json` and shows: current position, queue size, places gained/lost
   since the previous snapshot, orders added to or removed from the queue behind
-  us, an estimated shipping
-  date and a progress chart. Its UI is in French. It validates the file through
+  us, the queue itself drawn as a lane with our place marked on it, an estimated
+  shipping date and a progress chart. Its UI is in French. It validates the file
+  through
   the same `parseHistory` gate the scraper writes through, so an HTTP error page
   or a half-written file says so instead of rendering `NaN` on every card.
 
@@ -59,6 +60,30 @@ series:
   headline date is a single day computed from a fitted line; the range is what
   keeps it from reading as a promise.
 
+The queue lane draws the queue itself rather than the history of it: one rank
+axis from the order shipping next, at the left, to the back of the queue at the
+right, with our order marked on it. The chart answers *how fast*; this answers
+*where*, which the position number alone does not — `#1114` means nothing until
+you can see it sitting between the 1113 orders that ship first and the 497 that
+arrived after.
+
+- **the comb** is the queue at bucket resolution: the lane holds a fixed number
+  of ticks, so one tick is `queue size / ticks` orders, and the caption says how
+  many. It is a texture, never a count — the two figures under the lane
+  (`position − 1` ahead, `queue size − position` behind) are exact and are what
+  the reading rests on. Below one order per tick the ticks stop subdividing and
+  a queue of seven draws seven blocks, because a finer comb would claim a
+  precision the queue does not have.
+- **only the orders ahead carry the accent**, fading from the shipping end
+  towards the marker. That segment is the wait, and it is the only part of the
+  drawing that has to go away; the orders behind are greyed, on the same
+  reasoning that makes the queue-size line thin and unfilled in the chart.
+- **the pale marker** is our rank at the first snapshot, on today's axis — both
+  are ranks, so they belong on the same scale — with the ground covered since
+  drawn between the two. A queue that has since shed enough orders to no longer
+  contain that rank puts the ghost at the back of the lane and says so in the
+  caption, rather than dropping it silently.
+
 The chart is three panels on one time axis, because the position curve alone
 answers neither of the questions the estimate raises:
 
@@ -91,6 +116,7 @@ tested without a browser:
 | --- | --- |
 | [`lib/domain.js`](lib/domain.js) | queue arithmetic: movement, shipping estimate, day maths |
 | [`lib/chart-model.js`](lib/chart-model.js) | chart geometry as plain numbers; `app.js` is a template over it |
+| [`lib/queue-model.js`](lib/queue-model.js) | queue-lane geometry, same split and for the same reason |
 | [`lib/history.js`](lib/history.js) | everything that may read or write `history.json` |
 | [`lib/tracker.js`](lib/tracker.js) | the four requests and regexes that talk to trmnl.com |
 | [`lib/config.js`](lib/config.js) | order number and tuning constants |
