@@ -155,6 +155,176 @@ header h1 {
   font-size: 0.78rem;
 }
 
+/* The queue, drawn. One accent in the whole card: the comb between the marker and
+   the shipping end, which is the wait. Everything else — the orders behind, the
+   ghost of where we started — is greyed context, so the eye lands on the distance
+   still to go rather than on the decoration around it. */
+.queue-section {
+  margin-top: 28px;
+}
+
+.queue-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 14px 14px 12px;
+}
+
+/* Which end is which. Without them the lane is a bar with no direction, and the
+   whole reading depends on knowing that orders leave at the left. */
+.queue-ends {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 2px 6px;
+  color: var(--text-dim);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.queue-lane {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* The queue as an object: the ticks are held in it rather than floating on the
+   card, and the marker is the only thing that breaks out of it. */
+.q-track {
+  fill: var(--bg);
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+/* One tick is a slice of the queue, not one order — the caption says how many.
+   Ahead of the marker they carry a wash that fades from the shipping end towards
+   us, so the lane reads as a run towards a door rather than as a filled bar. The
+   pale end still has to separate from the greyed orders behind the marker, which
+   is what sets the floor on the second stop. */
+.q-beam-from { stop-color: var(--accent); stop-opacity: 1; }
+.q-beam-to { stop-color: var(--accent); stop-opacity: 0.55; }
+.q-ahead rect { fill: url(#queue-beam); }
+.q-behind rect { fill: var(--text-dim); opacity: 0.3; }
+
+/* The marker stands out of the comb top and bottom, so it reads as a mark *on*
+   the queue rather than as one more tick in it. */
+.q-marker-glow { fill: var(--accent); opacity: 0.13; }
+.q-marker-bar { fill: var(--accent); }
+.q-chip,
+.q-chip-tip { fill: var(--accent); }
+
+.q-chip-label {
+  fill: var(--surface);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Where we stood at the first relevé, and the ground covered since. Dashed and
+   dim: it is a memory, not a second position. */
+.q-ghost {
+  stroke: var(--text-dim);
+  stroke-width: 1.75;
+  stroke-dasharray: 3 3.5;
+  opacity: 0.7;
+}
+
+.q-trail,
+.q-trail-head {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.8;
+}
+
+/* Losing ground is rare and worth seeing, same call as the gains strip. */
+.q-travel.is-loss .q-trail,
+.q-travel.is-loss .q-trail-head { stroke: var(--bad); }
+
+.q-trail-label {
+  fill: var(--text-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* One reveal on load, in the order the drawing is read: the wait unfurls from the
+   shipping end, the marker arrives from where we started, the trail draws in
+   behind it. It is the only motion on the page, and it says the one thing a still
+   picture of a queue cannot — which way this is going. */
+@keyframes q-unfurl { from { transform: scaleX(0); } }
+@keyframes q-slide { from { transform: translateX(var(--q-travel)); opacity: 0; } }
+@keyframes q-draw { from { stroke-dashoffset: calc(var(--q-len) * var(--q-dir)); } }
+@keyframes q-fade { from { opacity: 0; } }
+
+.q-ahead {
+  /* Against the viewBox, so the comb grows from the shipping end of the lane
+     rather than from its own bounding box, which moves with the marker. */
+  transform-box: view-box;
+  transform-origin: left center;
+  animation: q-unfurl 700ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+.q-behind { animation: q-fade 700ms ease both; }
+.q-marker { animation: q-slide 800ms cubic-bezier(0.22, 0.61, 0.36, 1) both; }
+.q-ghost { animation: q-fade 500ms ease 450ms both; }
+
+/* Drawn from the ghost towards the marker, whichever side that is: the dash
+   offset is the trail's own length, signed by the direction of travel. */
+.q-trail {
+  stroke-dasharray: var(--q-len);
+  animation: q-draw 600ms ease 250ms both;
+}
+
+.q-trail-head,
+.q-trail-label { animation: q-fade 400ms ease 700ms both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .q-ahead,
+  .q-behind,
+  .q-marker,
+  .q-ghost,
+  .q-trail,
+  .q-trail-head,
+  .q-trail-label { animation: none; }
+}
+
+/* The two exact figures, which is what the comb is never counted for. */
+.queue-counts {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0 2px;
+}
+
+.queue-count--behind { text-align: right; }
+
+.queue-count-value {
+  display: block;
+  font-size: 1.1rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--accent);
+}
+
+/* Dim, and deliberately not the accent: what is behind us is context — it is the
+   queue ahead that has to clear before the order ships. */
+.queue-count--behind .queue-count-value { color: var(--text-dim); }
+
+.queue-count-label {
+  color: var(--text-dim);
+  font-size: 0.76rem;
+}
+
+.queue-caption {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  line-height: 1.45;
+  margin: 10px 2px 0;
+}
+
 .eta {
   margin-top: 12px;
   background: var(--surface);
@@ -197,7 +367,8 @@ header h1 {
   margin-top: 28px;
 }
 
-.chart-section h2 {
+.chart-section h2,
+.queue-section h2 {
   font-size: 1rem;
   margin: 0 0 10px;
   color: var(--text-dim);

@@ -40,6 +40,7 @@ scripts/scrape.mjs ──> lib/tracker.js  (4 HTTP requests + regexes → {posit
 index.html → app.js ──────────┘  lib/history.js (parseHistory gate, staleness)
                                  lib/domain.js      (queue arithmetic)
                                  lib/chart-model.js (chart geometry as numbers)
+                                 lib/queue-model.js (queue-lane geometry as numbers)
 ```
 
 | File | Responsibility |
@@ -47,6 +48,7 @@ index.html → app.js ──────────┘  lib/history.js (parseHi
 | `lib/config.js` | `ORDER_NUMBER`, `RATE_WINDOW_DAYS`, `STALE_AFTER_DAYS` |
 | `lib/domain.js` | queue arithmetic: `movement`, `shippingEstimate`, UTC day maths. Pure — no DOM, no I/O, no formatting |
 | `lib/chart-model.js` | `buildChartModel` returns plain numbers; `app.js` is a template over them |
+| `lib/queue-model.js` | `buildQueueModel`: the queue lane (comb, marker, travel trail) as numbers |
 | `lib/history.js` | everything that may read or write `history.json`: `parseHistory`, `validateSnapshot`, `upsertSnapshot`, `staleness` |
 | `lib/tracker.js` | Node-only: the request sequence and regexes against trmnl.com |
 | `app.js` | formatting + DOM only. If you are writing arithmetic here, it belongs in `lib/` |
@@ -97,7 +99,8 @@ readout and the table build cells with `textContent`; keep it that way.
 
 ## Tests
 
-`test/` mirrors `lib/` (`domain`, `history`, `chart-model`, `tracker`) plus
+`test/` mirrors `lib/` (`domain`, `history`, `chart-model`, `queue-model`,
+`tracker`) plus
 `assets.test.js` for the service-worker precache list. Fixtures in
 `test/fixtures/` are *synthetic* markup shapes, not captures of the live site.
 
@@ -147,6 +150,12 @@ chroma floor, CVD separation, 3:1 contrast) separately for each surface — if y
 change a colour, re-validate rather than lightening the light-mode value.
 Tabular figures are for columns of numbers (table, axis ticks, chart labels), not
 for the hero values.
+
+**The queue lane** is a rank axis, not a progress bar: rank 1 at the left, the
+back of the queue at the right, our order marked on it. The comb is a texture —
+one tick is several orders — so the exact counts are printed as figures beside
+it and nothing is ever read off the ticks. Only the segment ahead of the marker
+carries the accent, because that segment is the wait.
 
 **Charts**: position and queue size share one y-axis on purpose — the *gap*
 between the lines is the meaning, and a dual axis would destroy it. The gains
