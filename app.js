@@ -18,6 +18,11 @@ const dateFmt = new Intl.DateTimeFormat(LOCALE, { day: "numeric", month: "short"
 // with the full stop ending a sentence. Prose gets the unabbreviated month; the
 // axis labels and the table, where space is tight, keep the short one.
 const proseDateFmt = new Intl.DateTimeFormat(LOCALE, { day: "numeric", month: "long" });
+// For the near end of a range that stays inside one month: "du 13 au 23 octobre"
+// rather than "du 13 octobre au 23 octobre". Compared on the formatted month, not
+// on the UTC one, so the test matches what the label actually says.
+const dayFmt = new Intl.DateTimeFormat(LOCALE, { day: "numeric" });
+const monthFmt = new Intl.DateTimeFormat(LOCALE, { month: "long", year: "numeric" });
 const longDateFmt = new Intl.DateTimeFormat(LOCALE, {
   weekday: "long",
   day: "numeric",
@@ -113,7 +118,9 @@ function renderEta(history) {
 function spread(range) {
   if (!range) return "";
   if (range.earliest && range.latest) {
-    return ` Selon l'irrégularité des relevés : entre le ${proseDateFmt.format(range.earliest)} et le ${proseDateFmt.format(range.latest)}.`;
+    const sameMonth = monthFmt.format(range.earliest) === monthFmt.format(range.latest);
+    const from = sameMonth ? dayFmt.format(range.earliest) : proseDateFmt.format(range.earliest);
+    return ` Fourchette, selon l'irrégularité des relevés : du ${from} au ${proseDateFmt.format(range.latest)}.`;
   }
   if (range.earliest) {
     return ` Au mieux le ${proseDateFmt.format(range.earliest)} ; les relevés sont trop irréguliers pour borner l'autre côté.`;
@@ -126,18 +133,19 @@ function spread(range) {
 // of the marker is the wait — it is the only part of the drawing that carries the
 // accent, because it is the only part that has to go away.
 function renderQueue(history) {
-  const section = document.getElementById("queue-section");
+  const figure = document.getElementById("queue-figure");
   const el = document.getElementById("queue");
   const latest = history[history.length - 1];
   const model = buildQueueModel(latest, history.length > 1 ? history[0] : null);
 
   // A snapshot the model refuses (a queue of zero) leaves nothing to draw: hide
-  // the section rather than ship an empty card with two dashes in it.
+  // the figure rather than ship an empty lane with two dashes under it. The
+  // position above it stays — that one is still readable.
   if (!model) {
-    section.hidden = true;
+    figure.hidden = true;
     return;
   }
-  section.hidden = false;
+  figure.hidden = false;
 
   const { geom, marker, trail, start, beam } = model;
   const { w, h, left, laneTop, laneH } = geom;
@@ -182,7 +190,7 @@ function renderQueue(history) {
           ? `<g class="q-travel${trail.gained < 0 ? " is-loss" : ""}" style="--q-len:${trail.width.toFixed(2)}px; --q-dir:${trail.direction}">
               <path class="q-trail" d="M${trail.from.toFixed(2)},${trail.y} H${trail.to.toFixed(2)}" />
               ${head}
-              <text class="q-trail-label" x="${trail.labelX.toFixed(2)}" y="${trail.labelY}" text-anchor="middle">${fmt.format(Math.abs(trail.gained))} places</text>
+              <text class="q-trail-label" x="${trail.labelX.toFixed(2)}" y="${trail.labelY}" text-anchor="middle">${fmt.format(Math.abs(trail.gained))} ${direction(trail.gained, places.up, places.down)}</text>
             </g>`
           : ""
       }
@@ -199,17 +207,18 @@ function renderQueue(history) {
   document.getElementById("queue-behind").textContent = fmt.format(model.behind);
 
   // What one tick is worth, so the comb reads as a texture over the queue rather
-  // than as one mark per order — and what the pale marker behind you is.
+  // than as one mark per order — and what the pale marker behind you is. Kept to
+  // one line: the trail is direct-labelled with the figure, so repeating it here
+  // cost a third line of prose to say what the drawing already says.
   const caption = [
     model.perTick < 1.5
-      ? "Chaque trait est une commande."
-      : `Chaque trait vaut environ ${fmt.format(Math.round(model.perTick))} commandes.`,
+      ? "1 trait = 1 commande."
+      : `1 trait ≈ ${fmt.format(Math.round(model.perTick))} commandes.`,
   ];
   if (trail) {
-    caption.push(
-      `Le repère clair est votre place au premier relevé, le ${dateFmt.format(parseDay(history[0].date))} : ` +
-        `${fmt.format(Math.abs(trail.gained))} ${direction(trail.gained, places.up, places.down)} depuis.`
-    );
+    // The unabbreviated month: "23 juil." already ends in a period, and the
+    // sentence's own full stop lands right behind it.
+    caption.push(`Repère clair : votre place le ${proseDateFmt.format(parseDay(history[0].date))}.`);
   }
   // The queue can shed more orders than we ever passed, and then the rank we
   // started at no longer exists in it. Saying so beats a marker parked on the
@@ -357,14 +366,17 @@ function renderChart(history) {
   renderChartTable(history);
   tableWrap.hidden = false;
 
+  // Kept to what cannot be read off the drawing: the axis direction, what a
+  // column covers, and what the dashes are. The rest was prose the legend and the
+  // direct labels already carry.
   document.getElementById("chart-caption").textContent =
-    "Position dans la file — plus bas = plus proche de l'expédition. " +
-    "En dessous : les places gagnées par jour, chaque colonne couvrant l'intervalle qu'elle mesure." +
+    "Plus bas = plus proche de l'expédition. En dessous, les places gagnées par jour, " +
+    "chaque colonne couvrant l'intervalle qu'elle mesure." +
     (!projection
       ? ""
       : projection.clipped
-        ? ` En pointillés : projection jusqu'à votre tour, le ${proseDateFmt.format(projection.target)}, hors du graphique.`
-        : " En pointillés : projection jusqu'à votre tour.");
+        ? ` Pointillés : projection jusqu'au ${proseDateFmt.format(projection.target)}, hors cadre.`
+        : " Pointillés : projection jusqu'à votre tour.");
 }
 
 // Crosshair + tooltip. The readout snaps to the nearest snapshot, so the reader
@@ -542,34 +554,33 @@ async function main() {
   renderEta(history);
   renderChart(history);
 
-  const totalGain = first.position - latest.position;
   const totalNetAdded = history
     .slice(1)
     .reduce((sum, entry, i) => sum + movement(history[i], entry).netAdded, 0);
   const daysTracked = Math.max(1, daysBetween(first.date, latest.date));
   const summaryEl = document.getElementById("summary");
 
-  // Both halves of this sentence can run backwards over a long enough series —
-  // the position can slip, and the queue can shed more orders behind us than it
-  // takes in — so each verb comes in the direction its figure went.
-  const gainClause = (n) =>
-    `vous avez ${n < 0 ? "perdu" : "gagné"} ` +
-    `<strong>${fmt.format(Math.abs(n))} place${plural(n)}</strong>`;
+  // The places gained since day one are drawn on the queue lane and labelled
+  // there, so this line no longer repeats them: what is left is the one figure
+  // nothing above shows, the queue's net flow behind us over the whole series. It
+  // runs in both directions — the queue can shed more orders than it takes in —
+  // so the verb comes in the direction the figure went.
   const flowClause = (n) =>
     n === 0
-      ? "la file restait stable derrière vous."
+      ? "la file est restée stable derrière vous."
       : n > 0
         ? `<strong>${fmt.format(n)} nouvelle${plural(n)} commande${plural(n)}</strong> ` +
-          `rejoignai${plural(n, "en")}t la file.`
+          `${plural(n) ? "ont" : "a"} rejoint la file derrière vous.`
         : `<strong>${fmt.format(-n)} commande${plural(n)}</strong> ` +
-          `quittai${plural(n, "en")}t la file derrière vous.`;
+          `${plural(n) ? "ont" : "a"} quitté la file derrière vous.`;
 
   if (history.length < 2) {
     summaryEl.innerHTML = `Premier relevé enregistré le ${dateFmt.format(parseDay(latest.date))} — la progression s'affichera à partir de demain.`;
   } else {
+    // The start date is on the lane's caption and on the chart's axis; naming it
+    // a third time here is what made this a paragraph.
     summaryEl.innerHTML =
-      `Depuis le ${dateFmt.format(parseDay(first.date))}, ${gainClause(totalGain)} en ` +
-      `<strong>${daysTracked} jour${plural(daysTracked)}</strong> de suivi, pendant que ` +
+      `En <strong>${daysTracked} jour${plural(daysTracked)}</strong> de suivi, ` +
       flowClause(totalNetAdded);
   }
 

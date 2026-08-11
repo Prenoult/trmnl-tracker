@@ -77,97 +77,97 @@ header h1 {
   line-height: 1.4;
 }
 
-.hero {
-  display: flex;
-  gap: 12px;
+/* Everything about the present tense, in one frame. */
+.now {
   margin-top: 20px;
-}
-
-.stat {
-  flex: 1;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 16px;
-  padding: 18px 16px;
+  padding: 16px;
+}
+
+.now-head {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   align-items: flex-start;
-  /* The two values are deliberately different sizes now, so the labels are what
-     line up: pushed to the bottom of both cards rather than trailing each value. */
   justify-content: space-between;
+  gap: 8px 16px;
 }
 
-.stat--primary {
-  flex: 1.6;
-}
+.now-position { margin: 0; }
 
-/* The position is the one number this page exists for, so it is the only hero
-   figure on it. The queue size is what that rank is read against — the same call
-   the chart makes, where one line is filled and labelled and the other is thin
-   context. Two values at the same size said the opposite.
+/* The position is the one number this page exists for, so it is the only display
+   figure on it. The queue size sits in its label, which is what it is: the thing
+   the rank is measured against — the same call the chart makes, where one line is
+   filled and labelled and the other is thin context.
 
    Proportional figures, not tabular: tabular gives every digit the width of a
    zero, which reads loose at display sizes. It is kept where numbers stack into
    a column and have to align — the table, the axis ticks. */
-.stat-value {
-  font-size: 1.5rem;
-  font-weight: 700;
-  line-height: 1.1;
-}
-
-.stat--primary .stat-value {
+.now-value {
+  display: block;
   color: var(--accent);
-  /* Never wider than the card: at 320px the hero would otherwise overflow it. */
-  font-size: clamp(2.2rem, 12vw, 3rem);
+  /* Never wider than the card: at 320px the figure would otherwise overflow it. */
+  font-size: clamp(2rem, 11vw, 2.8rem);
+  font-weight: 700;
+  line-height: 1.05;
 }
 
-.stat-label {
+.now-label {
+  display: block;
+  max-width: 15ch;
+  margin-top: 2px;
   color: var(--text-dim);
   font-size: 0.8rem;
-  margin-top: 4px;
+  line-height: 1.35;
 }
 
+/* Two lines, not two cards: each is a figure and the noun that gives it its
+   direction, which fits on one line and never needed a box of its own. */
 .deltas {
   display: flex;
-  gap: 12px;
-  margin-top: 12px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  text-align: right;
+}
+
+.delta-since {
+  margin: 0 0 2px;
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
 }
 
 .delta-card {
-  flex: 1;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 14px 16px;
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  line-height: 1.35;
 }
 
 .delta-value {
-  display: block;
-  font-size: 1.3rem;
+  font-size: 0.95rem;
   font-weight: 700;
+  color: var(--text);
 }
 
 .delta-value.positive { color: var(--good); }
 .delta-value.negative { color: var(--bad); }
 
-.delta-label {
-  color: var(--text-dim);
-  font-size: 0.78rem;
-}
-
 /* The queue, drawn. One accent in the whole card: the comb between the marker and
    the shipping end, which is the wait. Everything else — the orders behind, the
    ghost of where we started — is greyed context, so the eye lands on the distance
    still to go rather than on the decoration around it. */
-.queue-section {
-  margin-top: 28px;
-}
-
-.queue-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 14px 14px 12px;
+/* Part of the block above rather than a card of its own: articulated from the
+   figures by a hairline, which is enough — a second border and a second heading
+   made one subject look like two. */
+.queue-figure {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
 }
 
 /* Which end is which. Without them the lane is a bar with no direction, and the
@@ -320,9 +320,9 @@ header h1 {
 
 .queue-caption {
   color: var(--text-dim);
-  font-size: 0.75rem;
-  line-height: 1.45;
-  margin: 10px 2px 0;
+  font-size: 0.73rem;
+  line-height: 1.4;
+  margin: 8px 2px 0;
 }
 
 .eta {
@@ -330,10 +330,10 @@ header h1 {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 16px;
-  padding: 16px;
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
 .eta-label {
@@ -367,8 +367,7 @@ header h1 {
   margin-top: 28px;
 }
 
-.chart-section h2,
-.queue-section h2 {
+.chart-section h2 {
   font-size: 1rem;
   margin: 0 0 10px;
   color: var(--text-dim);
@@ -642,16 +641,18 @@ svg.is-active .chart-cursor { opacity: 1; }
 }
 
 .summary {
-  margin-top: 20px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 16px;
-  font-size: 0.92rem;
+  margin: 14px 4px 0;
+  color: var(--text-dim);
+  font-size: 0.8rem;
   line-height: 1.5;
 }
 
-.summary strong { font-variant-numeric: tabular-nums; }
+/* The figures step back up to full ink: the line is dim, the numbers in it are
+   the reason it is there. */
+.summary strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
 
 footer {
   margin-top: 28px;
