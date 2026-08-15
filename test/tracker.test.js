@@ -230,6 +230,15 @@ describe("fetchQueueStatus", () => {
     expect(calls.filter((c) => c.url.includes("status?token="))).toHaveLength(STATUS_ATTEMPTS);
   });
 
+  // The failure report used to say only "shipped?" and nothing else, which left
+  // no way to tell a reworded frame from a soft anti-bot block after the fact.
+  it("includes the last response body in the error, for diagnosing the next failure", async () => {
+    const { fetchImpl, sleep } = stub({ statusBodies: ["<div>Just a moment...</div>"] });
+    await expect(fetchQueueStatus("51230", { fetchImpl, sleep })).rejects.toThrow(
+      /Just a moment/
+    );
+  });
+
   // The distinction the run depends on: a bad minute at trmnl.com is worth
   // waiting out, a reworded page is not, and before the status was checked both
   // arrived as "Could not find CSRF token".
