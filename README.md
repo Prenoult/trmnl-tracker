@@ -59,6 +59,13 @@ series:
   end of the range allows a stalled queue, because "never" is not a date. The
   headline date is a single day computed from a fitted line; the range is what
   keeps it from reading as a promise.
+- **the pace comparison** re-runs the same least-squares fit on the *whole*
+  series instead of the last `RATE_WINDOW_DAYS` snapshots, and states whether
+  the current rate is faster, slower, or close to (within 10%) that whole-series
+  rate. A number on its own — "31.5 places/day" — has nothing to be fast or slow
+  compared to; this gives it a baseline. It says nothing once the tracked series
+  is still shorter than the rolling window itself, since the two fits would then
+  be the same window compared to itself.
 
 The queue lane draws the queue itself rather than the history of it: one rank
 axis from the order shipping next, at the left, to the back of the queue at the

@@ -3,7 +3,14 @@
 // DOM.
 
 import { ORDER_NUMBER } from "./lib/config.js";
-import { parseDay, daysBetween, plural, movement, shippingEstimate } from "./lib/domain.js";
+import {
+  parseDay,
+  daysBetween,
+  plural,
+  movement,
+  shippingEstimate,
+  historicalRate,
+} from "./lib/domain.js";
 import { buildChartModel } from "./lib/chart-model.js";
 import { buildQueueModel } from "./lib/queue-model.js";
 import { parseHistory, staleness } from "./lib/history.js";
@@ -99,9 +106,10 @@ function renderEta(history) {
   if (!est.date) {
     dateEl.textContent = "Indéterminée";
     subEl.textContent =
-      est.rate <= 0
+      (est.rate <= 0
         ? `La file n'a pas avancé ${window}.`
-        : `Au rythme actuel (${rateFmt.format(est.rate)} place${plural(est.rate)}/jour), l'échéance dépasse 10 ans.`;
+        : `Au rythme actuel (${rateFmt.format(est.rate)} place${plural(est.rate)}/jour), l'échéance dépasse 10 ans.`) +
+      paceComparison(est.rate, history);
     return;
   }
 
@@ -109,7 +117,28 @@ function renderEta(history) {
   subEl.textContent =
     `Dans environ ${fmt.format(est.daysLeft)} jour${plural(est.daysLeft)}, ` +
     `au rythme de ${rateFmt.format(est.rate)} place${plural(est.rate)}/jour observé ${window}.` +
-    spread(est.range);
+    spread(est.range) +
+    paceComparison(est.rate, history);
+}
+
+// The rolling rate above says how fast the queue is moving now; on its own that
+// number has nothing to be fast or slow compared to. historicalRate refits the
+// same regression over the whole series, and this names the direction in words
+// rather than a raw ratio, matching how every other paired figure on this page
+// reads (the delta cards, the flow clause) — a sign or a multiplier says less
+// than "plus lent que" does.
+function paceComparison(recentRate, history) {
+  const hist = historicalRate(history);
+  if (!hist || hist.rate <= 0) return "";
+
+  const histLabel = `${rateFmt.format(hist.rate)} place${plural(hist.rate)}/jour`;
+  const relDiff = (recentRate - hist.rate) / hist.rate;
+  // Under 10% either way reads as noise around the same pace, not a trend.
+  if (Math.abs(relDiff) < 0.1) {
+    return ` Proche du rythme moyen depuis le début du suivi (${histLabel}).`;
+  }
+  const word = relDiff > 0 ? "plus rapide" : "plus lent";
+  return ` C'est ${word} que le rythme moyen depuis le début du suivi (${histLabel}).`;
 }
 
 // The date above is a single day computed from a fitted line; the relevés are
