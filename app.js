@@ -13,6 +13,7 @@ import {
 } from "./lib/domain.js";
 import { buildChartModel } from "./lib/chart-model.js";
 import { buildQueueModel } from "./lib/queue-model.js";
+import { buildCalendarModel } from "./lib/calendar-model.js";
 import { parseHistory, staleness } from "./lib/history.js";
 
 // The UI is French; keep every Intl formatter on one locale.
@@ -89,16 +90,18 @@ function renderStale(history, today) {
   el.hidden = false;
 }
 
-function renderEta(history) {
+function renderEta(history, today) {
   const dateEl = document.getElementById("eta-date");
   const subEl = document.getElementById("eta-sub");
   const paceEl = document.getElementById("eta-pace");
+  const calendarEl = document.getElementById("eta-calendar");
   const est = shippingEstimate(history);
 
   if (!est) {
     dateEl.textContent = "–";
     subEl.textContent = "Estimation disponible dès le deuxième relevé.";
     paceEl.hidden = true;
+    calendarEl.hidden = true;
     return;
   }
 
@@ -112,6 +115,8 @@ function renderEta(history) {
         ? `La file n'a pas avancé ${window}.`
         : `Au rythme actuel (${rateFmt.format(est.rate)} place${plural(est.rate)}/jour), l'échéance dépasse 10 ans.`;
     renderPace(paceEl, est.rate, history);
+    // No target date, nothing to circle.
+    calendarEl.hidden = true;
     return;
   }
 
@@ -121,6 +126,53 @@ function renderEta(history) {
     `au rythme de ${rateFmt.format(est.rate)} place${plural(est.rate)}/jour observé ${window}.` +
     spread(est.range);
   renderPace(paceEl, est.rate, history);
+  renderCalendar(calendarEl, today, est.date, est.range);
+}
+
+// The headline gives the date as a sentence; this gives it as a page, the way
+// the queue lane gives the rank as a drawing instead of only as #1114. Which
+// day of the week, and how the range sits against it, both read faster off a
+// grid than off "du 13 au 19 septembre" parsed back into a mental calendar.
+function renderCalendar(el, today, target, range) {
+  const model = buildCalendarModel(today, target, range);
+  if (!model) {
+    el.hidden = true;
+    return;
+  }
+
+  el.hidden = false;
+
+  const body = document.getElementById("eta-calendar-body");
+  body.replaceChildren();
+
+  for (const week of model.weeks) {
+    const row = document.createElement("tr");
+    for (const day of week) {
+      const cell = document.createElement("td");
+      cell.textContent = day.day;
+      cell.className =
+        (day.inMonth ? "" : "is-out ") +
+        (day.inRange ? "is-range " : "") +
+        (day.isToday ? "is-today " : "") +
+        (day.isTarget ? "is-target " : "");
+      row.append(cell);
+    }
+    body.append(row);
+  }
+
+  // The one thing the shading can't show honestly on its own: a range that
+  // spills past the edge of the page it's drawn on, or one with no late bound
+  // at all. Named here rather than left to a hover, on a page nothing else
+  // hides behind a title attribute either.
+  const caveats = [];
+  if (model.clippedBefore || model.clippedAfter) {
+    caveats.push("La fourchette dépasse ce mois-ci.");
+  }
+  if (model.openEnded) {
+    caveats.push("Pas de borne tardive : la file pourrait stagner.");
+  }
+  document.getElementById("eta-calendar-caption").textContent =
+    monthFmt.format(model.month) + (caveats.length ? " — " + caveats.join(" ") : "");
 }
 
 // The rolling rate above says how fast the queue is moving now; on its own that
@@ -580,8 +632,11 @@ async function main() {
   const first = history[0];
   const last = previous ? movement(previous, latest) : null;
 
-  // Same UTC convention as the scraper, so "today" means the same day on both sides.
-  renderStale(history, new Date().toISOString().slice(0, 10));
+  // Same UTC convention as the scraper, so "today" means the same day on both
+  // sides — and computed once here rather than wherever each renderer needs it,
+  // so nothing on the page can disagree with anything else about what day it is.
+  const today = new Date().toISOString().slice(0, 10);
+  renderStale(history, today);
 
   document.getElementById("position").textContent = `#${fmt.format(latest.position)}`;
   document.getElementById("total").textContent = fmt.format(latest.total);
@@ -605,7 +660,7 @@ async function main() {
   for (const el of document.querySelectorAll(".delta-since")) el.textContent = sinceLabel;
 
   renderQueue(history);
-  renderEta(history);
+  renderEta(history, today);
   renderChart(history);
 
   const totalNetAdded = history

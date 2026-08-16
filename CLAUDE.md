@@ -41,14 +41,16 @@ index.html → app.js ──────────┘  lib/history.js (parseHi
                                  lib/domain.js      (queue arithmetic)
                                  lib/chart-model.js (chart geometry as numbers)
                                  lib/queue-model.js (queue-lane geometry as numbers)
+                                 lib/calendar-model.js (ETA calendar grid as day cells)
 ```
 
 | File | Responsibility |
 | --- | --- |
 | `lib/config.js` | `ORDER_NUMBER`, `RATE_WINDOW_DAYS`, `STALE_AFTER_DAYS` |
-| `lib/domain.js` | queue arithmetic: `movement`, `shippingEstimate`, UTC day maths. Pure — no DOM, no I/O, no formatting |
+| `lib/domain.js` | queue arithmetic: `movement`, `shippingEstimate`, `historicalRate`, `paceSeries`, UTC day maths. Pure — no DOM, no I/O, no formatting |
 | `lib/chart-model.js` | `buildChartModel` returns plain numbers; `app.js` is a template over them |
 | `lib/queue-model.js` | `buildQueueModel`: the queue lane (comb, marker, travel trail) as numbers |
+| `lib/calendar-model.js` | `buildCalendarModel`: the ETA's month grid (day cells, target, range band) as data |
 | `lib/history.js` | everything that may read or write `history.json`: `parseHistory`, `validateSnapshot`, `upsertSnapshot`, `staleness` |
 | `lib/tracker.js` | Node-only: the request sequence and regexes against trmnl.com |
 | `app.js` | formatting + DOM only. If you are writing arithmetic here, it belongs in `lib/` |

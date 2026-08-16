@@ -67,6 +67,16 @@ series:
   is still shorter than the rolling window itself, since the two fits would then
   be the same window compared to itself.
 
+Under the headline date sits a small calendar page for the month it falls in:
+the target date circled, and — where a range exists — every day of it shaded.
+"Mercredi 16 septembre 2026" says the date; the grid says which day of the week
+that is and how the range sits around it, both faster to read off a page than
+parsed back out of "du 13 au 19 septembre". Only the target's own month is
+drawn, so a range reaching past its edges is clipped there rather than pulling
+in a second month — the same trade-off the chart's own axis makes for the
+projection — and the card says so explicitly rather than let the clipped band
+pass for the whole story.
+
 The queue lane draws the queue itself rather than the history of it: one rank
 axis from the order shipping next, at the left, to the back of the queue at the
 right, with our order marked on it. The chart answers *how fast*; this answers
