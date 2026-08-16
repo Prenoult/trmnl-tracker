@@ -357,6 +357,41 @@ header h1 {
   text-transform: uppercase;
 }
 
+/* A badge, not another clause in the paragraph below: the comparison is a
+   verdict (faster / slower / usual), and a verdict reads faster in a shape than
+   in a sentence. The figure it rests on still gets printed beside it, in
+   text-dim, so the badge is never the only place that number lives. */
+.eta-pace {
+  margin: 6px 0 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.eta-pace-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--border);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+
+/* Same tokens as the delta cards: faster is the good direction here too, and
+   re-using --good/--bad keeps this a two-colour vocabulary across the page
+   instead of a third pair that would need its own contrast check. */
+.eta-pace-badge.faster { color: var(--good); }
+.eta-pace-badge.slower { color: var(--bad); }
+
+.eta-pace-detail {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+}
+
 .eta-sub {
   color: var(--text-dim);
   font-size: 0.82rem;

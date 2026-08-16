@@ -92,11 +92,13 @@ function renderStale(history, today) {
 function renderEta(history) {
   const dateEl = document.getElementById("eta-date");
   const subEl = document.getElementById("eta-sub");
+  const paceEl = document.getElementById("eta-pace");
   const est = shippingEstimate(history);
 
   if (!est) {
     dateEl.textContent = "–";
     subEl.textContent = "Estimation disponible dès le deuxième relevé.";
+    paceEl.hidden = true;
     return;
   }
 
@@ -106,10 +108,10 @@ function renderEta(history) {
   if (!est.date) {
     dateEl.textContent = "Indéterminée";
     subEl.textContent =
-      (est.rate <= 0
+      est.rate <= 0
         ? `La file n'a pas avancé ${window}.`
-        : `Au rythme actuel (${rateFmt.format(est.rate)} place${plural(est.rate)}/jour), l'échéance dépasse 10 ans.`) +
-      paceComparison(est.rate, history);
+        : `Au rythme actuel (${rateFmt.format(est.rate)} place${plural(est.rate)}/jour), l'échéance dépasse 10 ans.`;
+    renderPace(paceEl, est.rate, history);
     return;
   }
 
@@ -117,28 +119,40 @@ function renderEta(history) {
   subEl.textContent =
     `Dans environ ${fmt.format(est.daysLeft)} jour${plural(est.daysLeft)}, ` +
     `au rythme de ${rateFmt.format(est.rate)} place${plural(est.rate)}/jour observé ${window}.` +
-    spread(est.range) +
-    paceComparison(est.rate, history);
+    spread(est.range);
+  renderPace(paceEl, est.rate, history);
 }
 
 // The rolling rate above says how fast the queue is moving now; on its own that
 // number has nothing to be fast or slow compared to. historicalRate refits the
-// same regression over the whole series, and this names the direction in words
-// rather than a raw ratio, matching how every other paired figure on this page
-// reads (the delta cards, the flow clause) — a sign or a multiplier says less
-// than "plus lent que" does.
-function paceComparison(recentRate, history) {
+// same regression over the whole series, and this reads as a verdict — a badge,
+// coloured the same way the delta cards are — rather than another clause in the
+// paragraph, because "faster" or "slower" is the kind of thing a reader wants at
+// a glance, not after parsing a sentence.
+function renderPace(el, recentRate, history) {
   const hist = historicalRate(history);
-  if (!hist || hist.rate <= 0) return "";
+  if (!hist || hist.rate <= 0) {
+    el.hidden = true;
+    return;
+  }
 
+  const badgeEl = document.getElementById("eta-pace-badge");
+  const detailEl = document.getElementById("eta-pace-detail");
   const histLabel = `${rateFmt.format(hist.rate)} place${plural(hist.rate)}/jour`;
   const relDiff = (recentRate - hist.rate) / hist.rate;
+
+  el.hidden = false;
   // Under 10% either way reads as noise around the same pace, not a trend.
   if (Math.abs(relDiff) < 0.1) {
-    return ` Proche du rythme moyen depuis le début du suivi (${histLabel}).`;
+    badgeEl.className = "eta-pace-badge";
+    badgeEl.textContent = "≈ rythme habituel";
+    detailEl.textContent = `moyenne depuis le début du suivi : ${histLabel}`;
+  } else {
+    const faster = relDiff > 0;
+    badgeEl.className = "eta-pace-badge " + (faster ? "faster" : "slower");
+    badgeEl.textContent = (faster ? "▲ plus rapide" : "▼ plus lent") + " que d'habitude";
+    detailEl.textContent = `moyenne depuis le début du suivi : ${histLabel}`;
   }
-  const word = relDiff > 0 ? "plus rapide" : "plus lent";
-  return ` C'est ${word} que le rythme moyen depuis le début du suivi (${histLabel}).`;
 }
 
 // The date above is a single day computed from a fitted line; the relevés are
