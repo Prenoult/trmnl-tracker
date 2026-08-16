@@ -333,6 +333,42 @@ describe("buildChartModel", () => {
       // Which is well short of the plot's right edge, where the projection runs.
       expect(model.bars.to).toBeLessThan(CHART.w - CHART.right);
     });
+
+    describe("the pace trend line", () => {
+      it("has one point per relevé after the first, on the same x as its column", () => {
+        const model = buildChartModel(real);
+        expect(model.bars.trend).toHaveLength(model.bars.columns.length);
+        model.bars.trend.forEach((p, i) => expect(p.x).toBe(model.bars.columns[i].to));
+      });
+
+      it("draws no line at all on two snapshots, where a window exists but no fit is smoothing anything yet", () => {
+        const { bars } = buildChartModel(real.slice(0, 2));
+        // One relevé past the first: shippingEstimate has a rate here, but there
+        // is nothing upstream of it to call a trend against.
+        expect(bars.trend).toHaveLength(1);
+      });
+
+      it("shares the bars' scale, so a steady pace never runs off the strip", () => {
+        // Ten steady days: every raw column reads 10/day, and the smoothed line
+        // sits on exactly the same number — nothing for the two to disagree on,
+        // which is the case most likely to have the line drift off the shared
+        // scale if the two used different ones.
+        const model = buildChartModel(series(10));
+        for (const p of model.bars.trend) {
+          expect(p.y).toBeGreaterThanOrEqual(model.bars.geom.top - 0.001);
+          expect(p.y).toBeLessThanOrEqual(model.bars.geom.top + model.bars.geom.plotH + 0.001);
+        }
+      });
+
+      it("agrees with the last column's top when the pace never changed", () => {
+        const model = buildChartModel(series(10));
+        const lastTrend = model.bars.trend[model.bars.trend.length - 1];
+        const lastColumn = model.bars.columns[model.bars.columns.length - 1];
+        // A column's top edge already sits at y(rate); with the pace equal to
+        // the raw rate throughout, the trend point lands on that same edge.
+        expect(lastTrend.y).toBeCloseTo(lastColumn.y, 6);
+      });
+    });
   });
 
   describe("x axis", () => {

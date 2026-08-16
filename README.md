@@ -59,6 +59,23 @@ series:
   end of the range allows a stalled queue, because "never" is not a date. The
   headline date is a single day computed from a fitted line; the range is what
   keeps it from reading as a promise.
+- **the pace comparison** re-runs the same least-squares fit on the *whole*
+  series instead of the last `RATE_WINDOW_DAYS` snapshots, and states whether
+  the current rate is faster, slower, or close to (within 10%) that whole-series
+  rate. A number on its own — "31.5 places/day" — has nothing to be fast or slow
+  compared to; this gives it a baseline. It says nothing once the tracked series
+  is still shorter than the rolling window itself, since the two fits would then
+  be the same window compared to itself.
+
+Under the headline date sits a small calendar page for the month it falls in:
+the target date circled, and — where a range exists — every day of it shaded.
+"Mercredi 16 septembre 2026" says the date; the grid says which day of the week
+that is and how the range sits around it, both faster to read off a page than
+parsed back out of "du 13 au 19 septembre". Only the target's own month is
+drawn, so a range reaching past its edges is clipped there rather than pulling
+in a second month — the same trade-off the chart's own axis makes for the
+projection — and the card says so explicitly rather than let the clipped band
+pass for the whole story.
 
 The queue lane draws the queue itself rather than the history of it: one rank
 axis from the order shipping next, at the left, to the back of the queue at the
@@ -104,6 +121,14 @@ answers neither of the questions the estimate raises:
   of movement, and a column the height of a normal one would claim a cadence that
   never happened. A skipped day is now the one thing on the page that is *wider*
   rather than invisible.
+
+  A solid line runs over the columns: the same rolling fit `shippingEstimate`
+  uses, recomputed as of every relevé instead of only today's, on the same scale
+  as the columns it is smoothing. The columns answer "how uneven was each day";
+  the line answers "is the pace itself trending", which no number of columns
+  read one at a time can show. It carries no per-point label — the current value
+  is already spelled out in the pace badge above the chart — and it draws nothing
+  at all until a second relevé gives it something to connect.
 
 Both are direct-labelled — the legend carries each series' current value and the
 strip labels its newest column — so nothing needs a hover to be read, which on a

@@ -1,12 +1,20 @@
 :root {
-  --bg: #f5f6f8;
-  --surface: #ffffff;
-  --text: #14161a;
-  --text-dim: #6b7280;
+  /* Warmed off the original cool greys towards trmnl.com's own palette — a
+     putty background a shade darker than the card sitting on it, rather than a
+     blue-tinted white. Contrast checked against the tokens it replaces, not
+     just eyeballed: text/surface 16.4:1 (was 18.1:1), text-dim/surface 5.3:1
+     (was 4.8:1), accent/surface 4.9:1 (was 5.2:1) — the same shape, warmer hue.
+     --accent, --good, --bad and the series pair are untouched: they are
+     validated as a set (see the note below) and a background hue shift alone
+     does not move that validation. */
+  --bg: #ece8e0;
+  --surface: #faf8f3;
+  --text: #1c1a16;
+  --text-dim: #6b675f;
   --accent: #2563eb;
   --good: #16a34a;
   --bad: #dc2626;
-  --border: #e5e7eb;
+  --border: #ded9cc;
   /* The two lines share one scale, so the pair has to be separable by anyone:
      validated as a categorical palette against this surface (lightness band,
      chroma floor, CVD separation, normal-vision floor, 3:1 contrast). Slot 1 is
@@ -14,25 +22,34 @@
      same thing across the page. */
   --series-position: #2563eb;
   --series-total: #eb6834;
+  /* A wash of --accent for the calendar's range band — a tint, not a second
+     colour, so it reads as "the same accent, thinned out" the way the chart's
+     own area fill does. Not the categorical pair above: a background tint
+     against text needs a contrast check (13.5:1 here), not a CVD one. */
+  --accent-soft: #dce3f2;
   color-scheme: light dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0b0d12;
-    --surface: #161a22;
-    --text: #f2f3f5;
-    --text-dim: #9aa1ac;
+    /* Same warm re-step as the light tokens above, checked the same way:
+       text/surface 14.7:1 (was 15.7:1), text-dim/surface 6.2:1 (was 6.7:1),
+       accent/surface 5.4:1 (was 5.7:1). */
+    --bg: #15130f;
+    --surface: #211e18;
+    --text: #f4f1ea;
+    --text-dim: #a39d8e;
     /* Inside the dark-mode lightness band (OKLCH L 0.48–0.67) at 5.67:1 on the
        dark surface; #5b9bff sat above the band. */
     --accent: #4f92fb;
     --good: #34d058;
     --bad: #ff6b6b;
-    --border: #262b35;
+    --border: #35302a;
     /* Re-stepped for the dark surface and validated as a set there, not flipped:
        the light steps sit outside the dark band. */
     --series-position: #4f92fb;
     --series-total: #d95926;
+    --accent-soft: #2b384a;
   }
 }
 
@@ -357,6 +374,142 @@ header h1 {
   text-transform: uppercase;
 }
 
+/* A page rather than a sentence: which day of the week, and how the range
+   sits against it, both read faster off a grid than parsed back out of "du 13
+   au 19 septembre". The exact dates stay in that sentence below — this is the
+   texture, the same relationship the queue lane's comb has to its own counts.
+   Behind a disclosure rather than open by default: the card already states the
+   date and the range in words, so the grid is a second look at the same fact,
+   worth a click rather than a fixed cost on every visit. */
+.eta-calendar {
+  margin: 6px 0 2px;
+}
+
+.eta-calendar summary {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.eta-calendar table {
+  margin-top: 8px;
+  width: 100%;
+  max-width: 220px;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.eta-calendar caption {
+  text-align: left;
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  margin-bottom: 4px;
+}
+
+.eta-calendar caption::first-letter {
+  text-transform: uppercase;
+}
+
+.eta-calendar th {
+  color: var(--text-dim);
+  font-weight: 600;
+  font-size: 0.68rem;
+}
+
+.eta-calendar th,
+.eta-calendar td {
+  width: 14.28%;
+  text-align: center;
+  padding: 2px 0;
+}
+
+.eta-calendar td {
+  /* z-index: 0 (not just position: relative) so this cell starts its own
+     stacking context — otherwise its z-index: -1 pseudo-elements below escape
+     past it and paint behind the whole card instead of just behind the digit. */
+  position: relative;
+  z-index: 0;
+  font-size: 0.8rem;
+  color: var(--text);
+}
+
+/* The month's own days only; the padding from the neighbouring months fills
+   the grid out to full weeks and has to stay legible as "not this month"
+   rather than read as one more day worth counting. */
+.eta-calendar td.is-out {
+  color: var(--text-dim);
+  opacity: 0.45;
+}
+
+/* The range: a wash under the digit, not a border — the same "one hue,
+   thinned out" move the chart's own area fill makes, so a whole week of it
+   never competes with the single circled target day. Negative z-index keeps
+   it behind the digit, which is a plain text node with nothing of its own to
+   raise above the pseudo-element otherwise. */
+.eta-calendar td.is-range::before {
+  content: "";
+  position: absolute;
+  inset: 1px 0;
+  background: var(--accent-soft);
+  z-index: -1;
+}
+
+.eta-calendar td.is-today {
+  box-shadow: inset 0 0 0 1px var(--text-dim);
+  border-radius: 999px;
+}
+
+/* The one day the whole card is about: filled, not just outlined, so it wins
+   against the range wash it usually sits inside of. */
+.eta-calendar td.is-target {
+  color: var(--surface);
+  font-weight: 700;
+}
+
+.eta-calendar td.is-target::after {
+  content: "";
+  position: absolute;
+  inset: 1px 2px;
+  background: var(--accent);
+  border-radius: 999px;
+  z-index: -1;
+}
+
+/* A badge, not another clause in the paragraph below: the comparison is a
+   verdict (faster / slower / usual), and a verdict reads faster in a shape than
+   in a sentence. The figure it rests on still gets printed beside it, in
+   text-dim, so the badge is never the only place that number lives. */
+.eta-pace {
+  margin: 6px 0 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.eta-pace-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--border);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+
+/* Same tokens as the delta cards: faster is the good direction here too, and
+   re-using --good/--bad keeps this a two-colour vocabulary across the page
+   instead of a third pair that would need its own contrast check. */
+.eta-pace-badge.faster { color: var(--good); }
+.eta-pace-badge.slower { color: var(--bad); }
+
+.eta-pace-detail {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+}
+
 .eta-sub {
   color: var(--text-dim);
   font-size: 0.82rem;
@@ -526,6 +679,18 @@ header h1 {
 /* Losing ground is rare and worth seeing; it is a status, not a third series. */
 .bar.is-loss { fill: var(--bad); }
 .bar.is-active { opacity: 1; }
+
+/* Same hue as the columns, the way the position curve above is a solid line
+   over its own faded fill: one series, two densities. The columns are the raw
+   day-to-day noise; this is the fit the ETA card actually reads. */
+.bar-trend {
+  fill: none;
+  stroke: var(--series-position);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
 
 .bar-baseline {
   stroke: var(--border);

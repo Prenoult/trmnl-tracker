@@ -3,9 +3,17 @@
 // DOM.
 
 import { ORDER_NUMBER } from "./lib/config.js";
-import { parseDay, daysBetween, plural, movement, shippingEstimate } from "./lib/domain.js";
+import {
+  parseDay,
+  daysBetween,
+  plural,
+  movement,
+  shippingEstimate,
+  historicalRate,
+} from "./lib/domain.js";
 import { buildChartModel } from "./lib/chart-model.js";
 import { buildQueueModel } from "./lib/queue-model.js";
+import { buildCalendarModel } from "./lib/calendar-model.js";
 import { parseHistory, staleness } from "./lib/history.js";
 
 // The UI is French; keep every Intl formatter on one locale.
@@ -82,14 +90,18 @@ function renderStale(history, today) {
   el.hidden = false;
 }
 
-function renderEta(history) {
+function renderEta(history, today) {
   const dateEl = document.getElementById("eta-date");
   const subEl = document.getElementById("eta-sub");
+  const paceEl = document.getElementById("eta-pace");
+  const calendarEl = document.getElementById("eta-calendar");
   const est = shippingEstimate(history);
 
   if (!est) {
     dateEl.textContent = "–";
     subEl.textContent = "Estimation disponible dès le deuxième relevé.";
+    paceEl.hidden = true;
+    calendarEl.hidden = true;
     return;
   }
 
@@ -102,6 +114,9 @@ function renderEta(history) {
       est.rate <= 0
         ? `La file n'a pas avancé ${window}.`
         : `Au rythme actuel (${rateFmt.format(est.rate)} place${plural(est.rate)}/jour), l'échéance dépasse 10 ans.`;
+    renderPace(paceEl, est.rate, history);
+    // No target date, nothing to circle.
+    calendarEl.hidden = true;
     return;
   }
 
@@ -110,6 +125,86 @@ function renderEta(history) {
     `Dans environ ${fmt.format(est.daysLeft)} jour${plural(est.daysLeft)}, ` +
     `au rythme de ${rateFmt.format(est.rate)} place${plural(est.rate)}/jour observé ${window}.` +
     spread(est.range);
+  renderPace(paceEl, est.rate, history);
+  renderCalendar(calendarEl, today, est.date, est.range);
+}
+
+// The headline gives the date as a sentence; this gives it as a page, the way
+// the queue lane gives the rank as a drawing instead of only as #1114. Which
+// day of the week, and how the range sits against it, both read faster off a
+// grid than off "du 13 au 19 septembre" parsed back into a mental calendar.
+function renderCalendar(el, today, target, range) {
+  const model = buildCalendarModel(today, target, range);
+  if (!model) {
+    el.hidden = true;
+    return;
+  }
+
+  el.hidden = false;
+
+  const body = document.getElementById("eta-calendar-body");
+  body.replaceChildren();
+
+  for (const week of model.weeks) {
+    const row = document.createElement("tr");
+    for (const day of week) {
+      const cell = document.createElement("td");
+      cell.textContent = day.day;
+      cell.className =
+        (day.inMonth ? "" : "is-out ") +
+        (day.inRange ? "is-range " : "") +
+        (day.isToday ? "is-today " : "") +
+        (day.isTarget ? "is-target " : "");
+      row.append(cell);
+    }
+    body.append(row);
+  }
+
+  // The one thing the shading can't show honestly on its own: a range that
+  // spills past the edge of the page it's drawn on, or one with no late bound
+  // at all. Named here rather than left to a hover, on a page nothing else
+  // hides behind a title attribute either.
+  const caveats = [];
+  if (model.clippedBefore || model.clippedAfter) {
+    caveats.push("La fourchette dépasse ce mois-ci.");
+  }
+  if (model.openEnded) {
+    caveats.push("Pas de borne tardive : la file pourrait stagner.");
+  }
+  document.getElementById("eta-calendar-caption").textContent =
+    monthFmt.format(model.month) + (caveats.length ? " — " + caveats.join(" ") : "");
+}
+
+// The rolling rate above says how fast the queue is moving now; on its own that
+// number has nothing to be fast or slow compared to. historicalRate refits the
+// same regression over the whole series, and this reads as a verdict — a badge,
+// coloured the same way the delta cards are — rather than another clause in the
+// paragraph, because "faster" or "slower" is the kind of thing a reader wants at
+// a glance, not after parsing a sentence.
+function renderPace(el, recentRate, history) {
+  const hist = historicalRate(history);
+  if (!hist || hist.rate <= 0) {
+    el.hidden = true;
+    return;
+  }
+
+  const badgeEl = document.getElementById("eta-pace-badge");
+  const detailEl = document.getElementById("eta-pace-detail");
+  const histLabel = `${rateFmt.format(hist.rate)} place${plural(hist.rate)}/jour`;
+  const relDiff = (recentRate - hist.rate) / hist.rate;
+
+  el.hidden = false;
+  // Under 10% either way reads as noise around the same pace, not a trend.
+  if (Math.abs(relDiff) < 0.1) {
+    badgeEl.className = "eta-pace-badge";
+    badgeEl.textContent = "≈ rythme habituel";
+    detailEl.textContent = `moyenne depuis le début du suivi : ${histLabel}`;
+  } else {
+    const faster = relDiff > 0;
+    badgeEl.className = "eta-pace-badge " + (faster ? "faster" : "slower");
+    badgeEl.textContent = (faster ? "▲ plus rapide" : "▼ plus lent") + " que d'habitude";
+    detailEl.textContent = `moyenne depuis le début du suivi : ${histLabel}`;
+  }
 }
 
 // The date above is a single day computed from a fitted line; the relevés are
@@ -236,7 +331,7 @@ function renderQueue(history) {
 // readout and the table.
 function barStrip(model) {
   const { w, left } = model.geom;
-  const { columns, baselineY, max, from, to, geom } = model.bars;
+  const { columns, trend, baselineY, max, from, to, geom } = model.bars;
   const latest = columns[columns.length - 1];
 
   const rects = columns
@@ -247,6 +342,15 @@ function barStrip(model) {
     )
     .join("");
 
+  // The smoothed rate the ETA card is built on, drawn over its own raw columns
+  // the same way the position curve above is drawn over its own faded fill:
+  // one hue, a solid line over a faded version of it. No per-point labels — the
+  // number it ends on is already spelled out in the ETA card above.
+  const trendLine =
+    trend.length > 1
+      ? `<path class="bar-trend" d="${trend.map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ")}" />`
+      : "";
+
   // Above the column, but never above the strip: a one-place gain sits a hair off
   // the baseline, where the label has to clear the rule without riding out of the
   // box. It carries the same surface halo as the curve's end label, so it stays
@@ -255,10 +359,11 @@ function barStrip(model) {
 
   return `
     <svg class="chart-bars" viewBox="0 0 ${w} ${geom.h}" role="img"
-      aria-label="Places gagnées par jour à chaque relevé, de ${rateFmt.format(Math.min(...columns.map((c) => c.rate)))} à ${rateFmt.format(max)}. Détail dans le tableau sous le graphique.">
+      aria-label="Places gagnées par jour à chaque relevé, de ${rateFmt.format(Math.min(...columns.map((c) => c.rate)))} à ${rateFmt.format(max)}, et le rythme lissé qui sert à l'estimation. Détail dans le tableau sous le graphique.">
       <text class="chart-axis" x="${left - 8}" y="${geom.top + 4}" text-anchor="end">${rateFmt.format(max)}</text>
       <line class="bar-baseline" x1="${from.toFixed(1)}" y1="${baselineY.toFixed(1)}" x2="${to.toFixed(1)}" y2="${baselineY.toFixed(1)}" />
       ${rects}
+      ${trendLine}
       <text class="bar-label" x="${(latest.left + latest.width / 2).toFixed(1)}" y="${labelY.toFixed(1)}" text-anchor="middle">${latest.rate > 0 ? "+" : ""}${rateFmt.format(latest.rate)}</text>
     </svg>`;
 }
@@ -371,7 +476,8 @@ function renderChart(history) {
   // direct labels already carry.
   document.getElementById("chart-caption").textContent =
     "Plus bas = plus proche de l'expédition. En dessous, les places gagnées par jour, " +
-    "chaque colonne couvrant l'intervalle qu'elle mesure." +
+    "chaque colonne couvrant l'intervalle qu'elle mesure, et le trait plein le rythme lissé " +
+    "sur lequel se base l'estimation." +
     (!projection
       ? ""
       : projection.clipped
@@ -526,8 +632,11 @@ async function main() {
   const first = history[0];
   const last = previous ? movement(previous, latest) : null;
 
-  // Same UTC convention as the scraper, so "today" means the same day on both sides.
-  renderStale(history, new Date().toISOString().slice(0, 10));
+  // Same UTC convention as the scraper, so "today" means the same day on both
+  // sides — and computed once here rather than wherever each renderer needs it,
+  // so nothing on the page can disagree with anything else about what day it is.
+  const today = new Date().toISOString().slice(0, 10);
+  renderStale(history, today);
 
   document.getElementById("position").textContent = `#${fmt.format(latest.position)}`;
   document.getElementById("total").textContent = fmt.format(latest.total);
@@ -551,7 +660,7 @@ async function main() {
   for (const el of document.querySelectorAll(".delta-since")) el.textContent = sinceLabel;
 
   renderQueue(history);
-  renderEta(history);
+  renderEta(history, today);
   renderChart(history);
 
   const totalNetAdded = history

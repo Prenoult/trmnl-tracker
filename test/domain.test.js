@@ -8,7 +8,9 @@ import { RATE_WINDOW_DAYS } from "../lib/config.js";
 import {
   addDays,
   daysBetween,
+  historicalRate,
   movement,
+  paceSeries,
   parseDay,
   plural,
   shippingEstimate,
@@ -263,5 +265,96 @@ describe("shippingEstimate", () => {
       expect(est.range.latest).toBeNull();
       expect(est.range.earliest).not.toBeNull();
     });
+  });
+});
+
+describe("historicalRate", () => {
+  // history.length - 1 snapshots after the first, so the rolling window in
+  // shippingEstimate (RATE_WINDOW_DAYS + 1 snapshots at most) already covers
+  // everything at this size — one more entry than that is the smallest history
+  // where a whole-series fit differs from the rolling one at all.
+  const dense = (n) =>
+    Array.from({ length: n }, (_, i) =>
+      day(iso(addDays(parseDay("2026-07-01"), i)), 1000 - i * 10, 1200 - i * 10)
+    );
+
+  it("has nothing to compare while the rolling window still covers the whole series", () => {
+    expect(historicalRate(dense(RATE_WINDOW_DAYS + 1))).toBeNull();
+  });
+
+  it("fits once the series outgrows the rolling window", () => {
+    expect(historicalRate(dense(RATE_WINDOW_DAYS + 2))).not.toBeNull();
+  });
+
+  it("differs from the rolling rate when the pace itself has changed", () => {
+    // Four days fast (-10/day), then eight slower (-2/day). The rolling window
+    // (the last RATE_WINDOW_DAYS + 1 = 8 snapshots) sits entirely in the slow
+    // half; the whole-series fit sees both and lands in between.
+    const history = [
+      ...Array.from({ length: 4 }, (_, i) =>
+        day(iso(addDays(parseDay("2026-07-01"), i)), 1000 - i * 10, 1200)
+      ),
+      ...Array.from({ length: 8 }, (_, i) =>
+        day(iso(addDays(parseDay("2026-07-01"), i + 4)), 960 - i * 2, 1200)
+      ),
+    ];
+
+    const recent = shippingEstimate(history);
+    expect(recent.rate).toBe(2);
+    expect(recent.spanDays).toBe(RATE_WINDOW_DAYS);
+
+    const overall = historicalRate(history);
+    expect(overall.rate).toBeCloseTo(4.5175, 4);
+    expect(overall.spanDays).toBe(11);
+    expect(overall.rate).toBeGreaterThan(recent.rate);
+  });
+});
+
+describe("paceSeries", () => {
+  it("has nothing to say before the second snapshot", () => {
+    expect(paceSeries([])).toEqual([]);
+    expect(paceSeries([day("2026-07-23", 1417, 1523)])).toEqual([null]);
+  });
+
+  it("tracks shippingEstimate's rate at every point once a window exists", () => {
+    // Same fast-then-slow series as the historicalRate test above. Each entry
+    // is what shippingEstimate would have reported as of that snapshot — the
+    // window trailing it, capped at RATE_WINDOW_DAYS — so the last entry has
+    // to agree with shippingEstimate on the full series.
+    const history = [
+      ...Array.from({ length: 4 }, (_, i) =>
+        day(iso(addDays(parseDay("2026-07-01"), i)), 1000 - i * 10, 1200)
+      ),
+      ...Array.from({ length: 8 }, (_, i) =>
+        day(iso(addDays(parseDay("2026-07-01"), i + 4)), 960 - i * 2, 1200)
+      ),
+    ];
+
+    const pace = paceSeries(history);
+    expect(pace[0]).toBeNull();
+    // Still inside the fast phase: any window drawn from it alone reads 10/day.
+    expect(pace[1]).toBe(10);
+    expect(pace[3]).toBe(10);
+    // The window has crossed into the slow phase and the rate is easing
+    // towards it, snapshot by snapshot, rather than jumping straight to 2.
+    expect(pace[5]).toBeCloseTo(8.8571, 4);
+    expect(pace[8]).toBeCloseTo(5.2381, 4);
+    expect(pace[pace.length - 1]).toBe(shippingEstimate(history).rate);
+  });
+
+  it("stays null while its window is degenerate, and recovers once it is not", () => {
+    // Two snapshots sharing a date: that window has no slope to report, so
+    // pace[1] is null even though pace[0] is null for a different reason (no
+    // window at all). By pace[2] the window has a third, later date in it and
+    // a slope exists again.
+    const history = [
+      day("2026-07-01", 100, 300),
+      day("2026-07-01", 95, 295),
+      day("2026-07-03", 80, 280),
+    ];
+    const pace = paceSeries(history);
+    expect(pace[0]).toBeNull();
+    expect(pace[1]).toBeNull();
+    expect(pace[2]).not.toBeNull();
   });
 });
