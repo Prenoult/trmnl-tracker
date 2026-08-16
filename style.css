@@ -377,9 +377,22 @@ header h1 {
 /* A page rather than a sentence: which day of the week, and how the range
    sits against it, both read faster off a grid than parsed back out of "du 13
    au 19 septembre". The exact dates stay in that sentence below — this is the
-   texture, the same relationship the queue lane's comb has to its own counts. */
+   texture, the same relationship the queue lane's comb has to its own counts.
+   Behind a disclosure rather than open by default: the card already states the
+   date and the range in words, so the grid is a second look at the same fact,
+   worth a click rather than a fixed cost on every visit. */
 .eta-calendar {
-  margin: 10px 0 2px;
+  margin: 6px 0 2px;
+}
+
+.eta-calendar summary {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.eta-calendar table {
+  margin-top: 8px;
   width: 100%;
   max-width: 220px;
   border-collapse: collapse;

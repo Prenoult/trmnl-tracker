@@ -80,21 +80,24 @@
   <section class="eta">
     <span class="eta-label">Expédition estimée</span>
     <span class="eta-value" id="eta-date">–</span>
-    <table class="eta-calendar" id="eta-calendar" hidden>
-      <caption id="eta-calendar-caption"></caption>
-      <thead>
-        <tr>
-          <th scope="col">L</th>
-          <th scope="col">M</th>
-          <th scope="col">M</th>
-          <th scope="col">J</th>
-          <th scope="col">V</th>
-          <th scope="col">S</th>
-          <th scope="col">D</th>
-        </tr>
-      </thead>
-      <tbody id="eta-calendar-body"></tbody>
-    </table>
+    <details class="eta-calendar" id="eta-calendar" hidden>
+      <summary>Voir le calendrier</summary>
+      <table>
+        <caption id="eta-calendar-caption"></caption>
+        <thead>
+          <tr>
+            <th scope="col">L</th>
+            <th scope="col">M</th>
+            <th scope="col">M</th>
+            <th scope="col">J</th>
+            <th scope="col">V</th>
+            <th scope="col">S</th>
+            <th scope="col">D</th>
+          </tr>
+        </thead>
+        <tbody id="eta-calendar-body"></tbody>
+      </table>
+    </details>
     <span class="eta-sub" id="eta-sub"></span>
     <p class="eta-pace" id="eta-pace" hidden>
       <span class="eta-pace-badge" id="eta-pace-badge"></span>
