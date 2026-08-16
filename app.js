@@ -279,7 +279,7 @@ function renderQueue(history) {
 // readout and the table.
 function barStrip(model) {
   const { w, left } = model.geom;
-  const { columns, baselineY, max, from, to, geom } = model.bars;
+  const { columns, trend, baselineY, max, from, to, geom } = model.bars;
   const latest = columns[columns.length - 1];
 
   const rects = columns
@@ -290,6 +290,15 @@ function barStrip(model) {
     )
     .join("");
 
+  // The smoothed rate the ETA card is built on, drawn over its own raw columns
+  // the same way the position curve above is drawn over its own faded fill:
+  // one hue, a solid line over a faded version of it. No per-point labels — the
+  // number it ends on is already spelled out in the ETA card above.
+  const trendLine =
+    trend.length > 1
+      ? `<path class="bar-trend" d="${trend.map((p, i) => `${i ? "L" : "M"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ")}" />`
+      : "";
+
   // Above the column, but never above the strip: a one-place gain sits a hair off
   // the baseline, where the label has to clear the rule without riding out of the
   // box. It carries the same surface halo as the curve's end label, so it stays
@@ -298,10 +307,11 @@ function barStrip(model) {
 
   return `
     <svg class="chart-bars" viewBox="0 0 ${w} ${geom.h}" role="img"
-      aria-label="Places gagnées par jour à chaque relevé, de ${rateFmt.format(Math.min(...columns.map((c) => c.rate)))} à ${rateFmt.format(max)}. Détail dans le tableau sous le graphique.">
+      aria-label="Places gagnées par jour à chaque relevé, de ${rateFmt.format(Math.min(...columns.map((c) => c.rate)))} à ${rateFmt.format(max)}, et le rythme lissé qui sert à l'estimation. Détail dans le tableau sous le graphique.">
       <text class="chart-axis" x="${left - 8}" y="${geom.top + 4}" text-anchor="end">${rateFmt.format(max)}</text>
       <line class="bar-baseline" x1="${from.toFixed(1)}" y1="${baselineY.toFixed(1)}" x2="${to.toFixed(1)}" y2="${baselineY.toFixed(1)}" />
       ${rects}
+      ${trendLine}
       <text class="bar-label" x="${(latest.left + latest.width / 2).toFixed(1)}" y="${labelY.toFixed(1)}" text-anchor="middle">${latest.rate > 0 ? "+" : ""}${rateFmt.format(latest.rate)}</text>
     </svg>`;
 }
@@ -414,7 +424,8 @@ function renderChart(history) {
   // direct labels already carry.
   document.getElementById("chart-caption").textContent =
     "Plus bas = plus proche de l'expédition. En dessous, les places gagnées par jour, " +
-    "chaque colonne couvrant l'intervalle qu'elle mesure." +
+    "chaque colonne couvrant l'intervalle qu'elle mesure, et le trait plein le rythme lissé " +
+    "sur lequel se base l'estimation." +
     (!projection
       ? ""
       : projection.clipped

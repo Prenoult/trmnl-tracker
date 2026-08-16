@@ -562,6 +562,18 @@ header h1 {
 .bar.is-loss { fill: var(--bad); }
 .bar.is-active { opacity: 1; }
 
+/* Same hue as the columns, the way the position curve above is a solid line
+   over its own faded fill: one series, two densities. The columns are the raw
+   day-to-day noise; this is the fit the ETA card actually reads. */
+.bar-trend {
+  fill: none;
+  stroke: var(--series-position);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
 .bar-baseline {
   stroke: var(--border);
   stroke-width: 1;

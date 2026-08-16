@@ -112,6 +112,14 @@ answers neither of the questions the estimate raises:
   never happened. A skipped day is now the one thing on the page that is *wider*
   rather than invisible.
 
+  A solid line runs over the columns: the same rolling fit `shippingEstimate`
+  uses, recomputed as of every relevé instead of only today's, on the same scale
+  as the columns it is smoothing. The columns answer "how uneven was each day";
+  the line answers "is the pace itself trending", which no number of columns
+  read one at a time can show. It carries no per-point label — the current value
+  is already spelled out in the pace badge above the chart — and it draws nothing
+  at all until a second relevé gives it something to connect.
+
 Both are direct-labelled — the legend carries each series' current value and the
 strip labels its newest column — so nothing needs a hover to be read, which on a
 phone means nothing needs a press-and-hold.
