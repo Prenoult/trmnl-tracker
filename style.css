@@ -1,12 +1,20 @@
 :root {
-  --bg: #f5f6f8;
-  --surface: #ffffff;
-  --text: #14161a;
-  --text-dim: #6b7280;
+  /* Warmed off the original cool greys towards trmnl.com's own palette — a
+     putty background a shade darker than the card sitting on it, rather than a
+     blue-tinted white. Contrast checked against the tokens it replaces, not
+     just eyeballed: text/surface 16.4:1 (was 18.1:1), text-dim/surface 5.3:1
+     (was 4.8:1), accent/surface 4.9:1 (was 5.2:1) — the same shape, warmer hue.
+     --accent, --good, --bad and the series pair are untouched: they are
+     validated as a set (see the note below) and a background hue shift alone
+     does not move that validation. */
+  --bg: #ece8e0;
+  --surface: #faf8f3;
+  --text: #1c1a16;
+  --text-dim: #6b675f;
   --accent: #2563eb;
   --good: #16a34a;
   --bad: #dc2626;
-  --border: #e5e7eb;
+  --border: #ded9cc;
   /* The two lines share one scale, so the pair has to be separable by anyone:
      validated as a categorical palette against this surface (lightness band,
      chroma floor, CVD separation, normal-vision floor, 3:1 contrast). Slot 1 is
@@ -19,16 +27,19 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0b0d12;
-    --surface: #161a22;
-    --text: #f2f3f5;
-    --text-dim: #9aa1ac;
+    /* Same warm re-step as the light tokens above, checked the same way:
+       text/surface 14.7:1 (was 15.7:1), text-dim/surface 6.2:1 (was 6.7:1),
+       accent/surface 5.4:1 (was 5.7:1). */
+    --bg: #15130f;
+    --surface: #211e18;
+    --text: #f4f1ea;
+    --text-dim: #a39d8e;
     /* Inside the dark-mode lightness band (OKLCH L 0.48–0.67) at 5.67:1 on the
        dark surface; #5b9bff sat above the band. */
     --accent: #4f92fb;
     --good: #34d058;
     --bad: #ff6b6b;
-    --border: #262b35;
+    --border: #35302a;
     /* Re-stepped for the dark surface and validated as a set there, not flipped:
        the light steps sit outside the dark band. */
     --series-position: #4f92fb;
