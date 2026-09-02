@@ -33,11 +33,14 @@ rewrites the datastore.
 ## Architecture
 
 ```
-scripts/scrape.mjs ──> lib/tracker.js  (4 HTTP requests + regexes → {position, total})
+scripts/scrape.mjs ──> lib/tracker.js  (4 HTTP requests + regexes → {position, total} | {shipped: true})
         │              lib/history.js  (validate → upsert)
-        └────────────> data/history.json   ← the entire datastore, committed by CI
+        │              lib/status.js   (validate)
+        ├────────────> data/history.json   ← the entire datastore, committed by CI
+        └────────────> data/status.json    ← written once, only after shipping
                               │
 index.html → app.js ──────────┘  lib/history.js (parseHistory gate, staleness)
+                                 lib/status.js      (parseStatus gate)
                                  lib/domain.js      (queue arithmetic)
                                  lib/chart-model.js (chart geometry as numbers)
                                  lib/queue-model.js (queue-lane geometry as numbers)
@@ -52,12 +55,18 @@ index.html → app.js ──────────┘  lib/history.js (parseHi
 | `lib/queue-model.js` | `buildQueueModel`: the queue lane (comb, marker, travel trail) as numbers |
 | `lib/calendar-model.js` | `buildCalendarModel`: the ETA's month grid (day cells, target, range band) as data |
 | `lib/history.js` | everything that may read or write `history.json`: `parseHistory`, `validateSnapshot`, `upsertSnapshot`, `staleness` |
-| `lib/tracker.js` | Node-only: the request sequence and regexes against trmnl.com |
+| `lib/status.js` | `parseStatus`: validates `status.json`, the one-shot shipped flag |
+| `lib/tracker.js` | Node-only: the request sequence and regexes against trmnl.com, including `isShipped` |
 | `app.js` | formatting + DOM only. If you are writing arithmetic here, it belongs in `lib/` |
-| `sw.js` | offline cache; network-first for `data/history.json`, cache-first for the rest |
+| `sw.js` | offline cache; network-first for `data/history.json` and `data/status.json`, cache-first for the rest |
 
 `data/history.json` is an array of `{ date: "YYYY-MM-DD", position, total }`,
-sorted by date, one entry per UTC day.
+sorted by date, one entry per UTC day. It never grows a `shipped` field or
+similar — every consumer of that strict shape would need a new case to check.
+Shipping is instead a separate, tiny `data/status.json`
+(`{ "shippedDate": "YYYY-MM-DD" }`), absent until the order ships and unchanged
+after that: history.json's last entry stays whatever it was on the last day the
+order was still queued.
 
 ## Rules that are easy to break
 
@@ -76,13 +85,25 @@ throws by design. Falling back to `[]` would make the scraper write a one-entry
 file over the series, and the workflow would commit and push it. The front end
 shows an error state instead of "no data yet".
 
+**`status.json` is optional; `history.json` is not.** A *missing* `status.json`
+(404, or `ENOENT` in the scraper) means "not shipped yet" and is the ordinary
+case — never an error. A `status.json` that exists but fails `parseStatus` is
+still an error, but not a fatal one for `app.js`: it is logged and the page
+falls back to showing the tracker as though not shipped, because the queue data
+underneath is still good. Contrast `history.json`, where any read failure blanks
+the whole page — it is the entire datastore, `status.json` is one auxiliary
+flag.
+
 **Touching `sw.js`? Bump `CACHE`.** Clients keep serving the old bundle
 otherwise. Every file in `app.js`'s static import graph must appear in `ASSETS`,
 or a cached page dies on a failed import. `lib/tracker.js` must stay *out* of
 `ASSETS` — it is Node-only. `test/assets.test.js` enforces all of this, including
 that `index.html` refs and manifest icons are cached and that the
 `apple-touch-icon` is a real 180×180 PNG (iOS ignores an SVG one and substitutes
-a screenshot of the page).
+a screenshot of the page). `data/status.json` is deliberately *not* in `ASSETS`
+even though it is fetched network-first like `data/history.json`: it does not
+exist until the order ships, and `cache.addAll` fails the whole precache on any
+one 404 in the list.
 
 **Queue size is the *current* total, not a running total.** Comparing two totals
 gives the net balance, not the orders added. The identity is
@@ -101,8 +122,8 @@ readout and the table build cells with `textContent`; keep it that way.
 
 ## Tests
 
-`test/` mirrors `lib/` (`domain`, `history`, `chart-model`, `queue-model`,
-`tracker`) plus
+`test/` mirrors `lib/` (`domain`, `history`, `status`, `chart-model`,
+`queue-model`, `tracker`) plus
 `assets.test.js` for the service-worker precache list. Fixtures in
 `test/fixtures/` are *synthetic* markup shapes, not captures of the live site.
 
@@ -120,18 +141,23 @@ bound to be rejected, so the run fails instead of committing garbage.
 Add a test alongside any change to `lib/`. If a change is genuinely untestable
 (styling, copy), say so rather than adding a test that asserts the platform.
 
-## CI and the daily workflow
+## CI and the tracking workflow
 
 - `.github/workflows/ci.yml` — on every push and PR, Node 22, matrix
   `TZ ∈ {UTC, Pacific/Auckland}`. Both must pass.
-- `.github/workflows/track.yml` — daily at 07:00 UTC (plus `workflow_dispatch`),
+- `.github/workflows/track.yml` — `workflow_dispatch` only (the `schedule:`
+  trigger was removed once order #51230 shipped; add it back for a new,
+  unshipped order — see README's "Tracking a different order"),
   concurrency-grouped, needs `contents: write` and `issues: write`. It runs the
-  scraper, commits `data/history.json`, and on failure opens (or comments on) one
-  issue labelled `tracker-failure`. A failed run writes nothing.
+  scraper and commits whatever it wrote: `data/history.json` on an ordinary
+  snapshot, `data/status.json` the one time the order turns out to have shipped,
+  or nothing on a genuine failure — which also opens (or comments on) one issue
+  labelled `tracker-failure`. Shipped is not a failure: no issue, no retry.
 
 The `Update queue history` commits on `main` come from the bot. Don't hand-edit
-`data/history.json`; if you must, keep it sorted, one entry per date, and valid
-against `parseHistory`.
+`data/history.json` or `data/status.json`; if you must, keep `history.json`
+sorted, one entry per date, and valid against `parseHistory`, and `status.json`
+valid against `parseStatus`.
 
 ## Conventions
 

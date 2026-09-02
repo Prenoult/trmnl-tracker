@@ -94,6 +94,18 @@ header h1 {
   line-height: 1.4;
 }
 
+/* Same shape as .stale-banner — a one-line status strip — in --good instead of
+   --bad: this one is not an alarm, it is the tracker announcing it is done. */
+.shipped-banner {
+  margin: 16px 0 0;
+  padding: 10px 12px;
+  border: 1px solid var(--good);
+  border-radius: 10px;
+  color: var(--good);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
 /* Everything about the present tense, in one frame. */
 .now {
   margin-top: 20px;
@@ -351,6 +363,17 @@ header h1 {
   display: flex;
   flex-direction: column;
   gap: 3px;
+}
+
+/* The [hidden] attribute selector and .eta / .eta-pace both have one class of
+   specificity, so without this the later, author-stylesheet `display: flex`
+   below wins the cascade over the UA stylesheet's `[hidden] { display: none }`
+   and app.js's `el.hidden = true` renders nothing hidden at all — the shipped
+   state discovered this the hard way, on the section that had never been
+   toggled before. Same fix .chart-tooltip[hidden] already needed below. */
+.eta[hidden],
+.eta-pace[hidden] {
+  display: none;
 }
 
 .eta-label {

@@ -1,8 +1,9 @@
 name: Track queue position
 
 on:
-  schedule:
-    - cron: "0 7 * * *" # 07:00 UTC daily
+  # Order #51230 shipped — see data/status.json — so there is no queue position
+  # left to poll for daily. Kept as workflow_dispatch only: run it by hand if
+  # ORDER_NUMBER ever changes to a new, unshipped order.
   workflow_dispatch: {}
 
 permissions:
@@ -35,6 +36,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/history.json
+          # Only appears once the order ships, and never changes after that — see
+          # scripts/scrape.mjs.
+          [ -f data/status.json ] && git add data/status.json
           git diff --cached --quiet && echo "No change" || git commit -m "Update queue history"
           git push
 
@@ -51,7 +55,7 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          body="The daily queue scrape failed on $(date -u +%F) — [run log]($RUN_URL).
+          body="The queue scrape failed on $(date -u +%F) — [run log]($RUN_URL).
 
           The app now shows the last successful snapshot, and the staleness
           banner appears once it is more than two days old. Nothing is written to
@@ -60,7 +64,7 @@ jobs:
           Closing this issue arms the next report."
 
           gh label create tracker-failure --color b60205 \
-            --description "The daily scrape workflow is failing" 2>/dev/null || true
+            --description "The scrape workflow is failing" 2>/dev/null || true
 
           existing=$(gh issue list --label tracker-failure --state open \
             --limit 1 --json number --jq '.[0].number // empty')
@@ -68,6 +72,6 @@ jobs:
           if [ -n "$existing" ]; then
             gh issue comment "$existing" --body "$body"
           else
-            gh issue create --title "Daily queue scrape is failing" \
+            gh issue create --title "Queue scrape is failing" \
               --label tracker-failure --body "$body"
           fi

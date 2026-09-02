@@ -15,6 +15,7 @@ import { buildChartModel } from "./lib/chart-model.js";
 import { buildQueueModel } from "./lib/queue-model.js";
 import { buildCalendarModel } from "./lib/calendar-model.js";
 import { parseHistory, staleness } from "./lib/history.js";
+import { parseStatus } from "./lib/status.js";
 
 // The UI is French; keep every Intl formatter on one locale.
 const LOCALE = "fr-FR";
@@ -88,6 +89,24 @@ function renderStale(history, today) {
     `Dernier relevé il y a ${fmt.format(days)} jour${plural(days)} : ` +
     `la mise à jour quotidienne semble en échec, les chiffres ci-dessous ne sont plus à jour.`;
   el.hidden = false;
+}
+
+// Once shipped, "expédition estimée" has nothing left to estimate: showing it
+// would answer a question that no longer applies. The rest of the page — queue
+// lane, chart, table — stays as the historical record of the wait.
+function renderShipped(status) {
+  const banner = document.getElementById("shipped-banner");
+  const etaSection = document.getElementById("eta-section");
+  if (!status) {
+    banner.hidden = true;
+    etaSection.hidden = false;
+    return;
+  }
+  banner.textContent =
+    `Commande expédiée le ${longDateFmt.format(parseDay(status.shippedDate))}. ` +
+    `Le suivi de la file d'attente est terminé.`;
+  banner.hidden = false;
+  etaSection.hidden = true;
 }
 
 function renderEta(history, today) {
@@ -603,6 +622,18 @@ async function loadHistory() {
   return parseHistory(await res.text());
 }
 
+// Unlike history.json, a missing status.json is the ordinary case — not shipped
+// yet — so a 404 resolves to null rather than joining loadHistory in the fatal
+// path below. A file that exists but fails to parse still throws: that is not
+// "not shipped", that is broken, and the caller decides how much of the page a
+// broken auxiliary file is worth taking down.
+async function loadStatus() {
+  const res = await fetch("data/status.json", { cache: "no-store" });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`data/status.json: HTTP ${res.status}`);
+  return parseStatus(await res.text());
+}
+
 async function main() {
   document.getElementById("order-number").textContent = ORDER_NUMBER;
 
@@ -627,6 +658,16 @@ async function main() {
     return;
   }
 
+  // A broken status.json is not treated as fatal the way a broken history.json
+  // is: history is the whole datastore, status is one auxiliary flag, and the
+  // queue data underneath is still worth showing even if this one file is bad.
+  let status = null;
+  try {
+    status = await loadStatus();
+  } catch (err) {
+    console.error(err);
+  }
+
   const latest = history[history.length - 1];
   const previous = history.length > 1 ? history[history.length - 2] : null;
   const first = history[0];
@@ -636,7 +677,11 @@ async function main() {
   // sides — and computed once here rather than wherever each renderer needs it,
   // so nothing on the page can disagree with anything else about what day it is.
   const today = new Date().toISOString().slice(0, 10);
-  renderStale(history, today);
+  renderShipped(status);
+  // The staleness banner exists to flag a failed daily run; once shipped there is
+  // no daily run any more, and "last snapshot N days ago" would read as an alarm
+  // over nothing.
+  if (!status) renderStale(history, today);
 
   document.getElementById("position").textContent = `#${fmt.format(latest.position)}`;
   document.getElementById("total").textContent = fmt.format(latest.total);
@@ -660,7 +705,9 @@ async function main() {
   for (const el of document.querySelectorAll(".delta-since")) el.textContent = sinceLabel;
 
   renderQueue(history);
-  renderEta(history, today);
+  // renderShipped already hid the section; skip the estimate itself too, since
+  // there is nothing left to estimate once the order has shipped.
+  if (!status) renderEta(history, today);
   renderChart(history);
 
   const totalNetAdded = history
