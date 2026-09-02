@@ -14,6 +14,7 @@ import {
   STATUS_ATTEMPTS,
   cookieHeader,
   fetchQueueStatus,
+  isShipped,
   mergeCookies,
   parseCsrfToken,
   parseQueueStatus,
@@ -27,6 +28,7 @@ const trackerPage = fixture("tracker-page.html");
 const resultPage = fixture("result-page.html");
 const statusQueue = fixture("status-queue.html");
 const statusChecking = fixture("status-checking.html");
+const statusShipped = fixture("status-shipped.html");
 
 const CSRF = "Xq7pLm3nRt9vBc2wYh5jKd8sFa1gZe4u";
 const TOKEN = "4f3a9c1e8b7d206f5a4e3c2b1d0f9e8a";
@@ -89,6 +91,21 @@ describe("parseQueueStatus", () => {
 
   it("returns null once the order has shipped and the sentence is gone", () => {
     expect(parseQueueStatus("<p>Your order has shipped!</p>")).toBeNull();
+  });
+});
+
+describe("isShipped", () => {
+  it("recognises the shipped notice", () => {
+    expect(isShipped(statusShipped)).toBe(true);
+  });
+
+  it("is case-insensitive", () => {
+    expect(isShipped("Your Order Has Been Shipped!")).toBe(true);
+  });
+
+  it("does not fire on ordinary queue or checking frames", () => {
+    expect(isShipped(statusQueue)).toBe(false);
+    expect(isShipped(statusChecking)).toBe(false);
   });
 });
 
@@ -208,6 +225,17 @@ describe("fetchQueueStatus", () => {
     const { calls, fetchImpl, sleep } = stub({ location: null });
     await fetchQueueStatus("51230", { fetchImpl, sleep });
     expect(calls[2].url).toBe("https://trmnl.com/order-tracker?order_number=51230");
+  });
+
+  it("reports shipped instead of retrying or throwing once the frame says so", async () => {
+    const { calls, fetchImpl, sleep } = stub({ statusBodies: [statusShipped] });
+    await expect(fetchQueueStatus("51230", { fetchImpl, sleep })).resolves.toEqual({
+      shipped: true,
+    });
+    // One look at the frame is enough — unlike "checking…", shipped will not
+    // change on a retry, so burning the attempt budget on it would only slow
+    // down the one run that has genuinely good news to report.
+    expect(calls.filter((c) => c.url.includes("status?token="))).toHaveLength(1);
   });
 
   it("retries a frame that is still checking, then succeeds", async () => {

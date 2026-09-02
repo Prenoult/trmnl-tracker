@@ -3,7 +3,7 @@
 // app.js is an ES module: every file it imports has to be listed too, otherwise
 // the page loads from cache and then dies on a failed import. test/assets.test.js
 // enforces that.
-const CACHE = "trmnl-tracker-v9";
+const CACHE = "trmnl-tracker-v10";
 const ASSETS = [
   "./",
   "index.html",
@@ -15,6 +15,7 @@ const ASSETS = [
   "lib/queue-model.js",
   "lib/calendar-model.js",
   "lib/history.js",
+  "lib/status.js",
   "manifest.json",
   "icon.svg",
   "icon-180.png",
@@ -36,10 +37,15 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
-  const isHistory = url.pathname.endsWith("data/history.json");
+  // status.json gets the same treatment as history.json, but is deliberately not
+  // in ASSETS above: it does not exist until the order ships, and cache.addAll
+  // fails outright on any 404 in the list, which would break the whole precache.
+  const isDataFile =
+    url.pathname.endsWith("data/history.json") || url.pathname.endsWith("data/status.json");
 
-  if (isHistory) {
-    // Network-first for the data file so a fresh daily snapshot shows up immediately.
+  if (isDataFile) {
+    // Network-first for the data files so a fresh daily snapshot — or the
+    // shipped flag — shows up immediately.
     event.respondWith(
       fetch(event.request)
         .then((res) => {

@@ -9,9 +9,15 @@ and progress.
   browser makes against `trmnl.com/order-tracker` (the page only contains the
   position after a form submit triggered by client-side JS — a plain GET is not
   enough). The result is appended to / updated in
-  [`data/history.json`](data/history.json), one entry per day.
+  [`data/history.json`](data/history.json), one entry per day — until the order
+  ships, at which point there is no more position to record and the run instead
+  writes [`data/status.json`](data/status.json) (`{ "shippedDate": "…" }`) once
+  and stops touching either file again.
 - A GitHub Actions workflow ([`.github/workflows/track.yml`](.github/workflows/track.yml))
-  runs that script every day at 07:00 UTC and commits the updated file.
+  runs that script and commits whatever it wrote. It ran on a daily schedule
+  while order #51230 was still queued; now that `data/status.json` exists it is
+  `workflow_dispatch` only — see [Tracking a different order](#tracking-a-different-order)
+  to re-enable the schedule for a new order.
 - [`index.html`](index.html) is a small web app (PWA) that reads
   `data/history.json` and shows: current position, queue size, places gained/lost
   since the previous snapshot, orders added to or removed from the queue behind
@@ -19,7 +25,10 @@ and progress.
   shipping date and a progress chart. Its UI is in French. It validates the file
   through
   the same `parseHistory` gate the scraper writes through, so an HTTP error page
-  or a half-written file says so instead of rendering `NaN` on every card.
+  or a half-written file says so instead of rendering `NaN` on every card. Once
+  `data/status.json` exists it shows a "commande expédiée" banner instead of the
+  shipping estimate, and leaves the rest of the page as the historical record of
+  the wait.
 
 No server to run: everything is static and can be hosted for free on GitHub
 Pages.
@@ -143,6 +152,7 @@ tested without a browser:
 | [`lib/chart-model.js`](lib/chart-model.js) | chart geometry as plain numbers; `app.js` is a template over it |
 | [`lib/queue-model.js`](lib/queue-model.js) | queue-lane geometry, same split and for the same reason |
 | [`lib/history.js`](lib/history.js) | everything that may read or write `history.json` |
+| [`lib/status.js`](lib/status.js) | validates `status.json`, the one-shot shipped flag |
 | [`lib/tracker.js`](lib/tracker.js) | the four requests and regexes that talk to trmnl.com |
 | [`lib/config.js`](lib/config.js) | order number and tuning constants |
 
@@ -170,8 +180,13 @@ tested without a browser:
    install it as a real app. The home-screen icon is `icon-180.png`: iOS ignores
    an SVG `apple-touch-icon` and substitutes a screenshot of the page, so both
    PNGs are committed rather than generated at deploy time.
-5. The workflow runs automatically every day. To take a snapshot right away
-   without waiting: **Actions** tab → *Track queue position* → **Run workflow**.
+5. This copy of the workflow has no `schedule:` trigger — order #51230, the one
+   it was tracking, has shipped, so there is nothing left to poll for daily. For
+   your own order, add a `schedule:` trigger back to
+   [`.github/workflows/track.yml`](.github/workflows/track.yml) (see
+   [Tracking a different order](#tracking-a-different-order)) so it runs
+   automatically every day. Until then, or to take a snapshot right away:
+   **Actions** tab → *Track queue position* → **Run workflow**.
 
 ## When it breaks
 
@@ -185,7 +200,12 @@ for opposite responses:
   one is not retried: it fails the run, and `validateSnapshot` is there for the
   subtler version where a half-matching regex yields a plausible-looking number.
 
-Either way, a failed run writes nothing: `data/history.json` keeps whatever it
+A third shape of 200 response is not a failure at all: `isShipped` in
+[`lib/tracker.js`](lib/tracker.js) recognises the page telling us the order has
+shipped, before it can be mistaken for a reworded one, and the run writes
+`data/status.json` once and exits cleanly — no retry, no issue.
+
+Either of the two real failures above leaves the run writing nothing: `data/history.json` keeps whatever it
 had. The workflow then opens an issue labelled `tracker-failure` (or comments on
 the open one, so a week of failures is one thread), and the app shows a banner
 once the newest snapshot is more than `STALE_AFTER_DAYS` old rather than
@@ -201,7 +221,19 @@ catches it. If the tracking ever stops quietly, check the **Actions** tab first.
 
 Edit `ORDER_NUMBER` in [`lib/config.js`](lib/config.js) and in
 [`.github/workflows/track.yml`](.github/workflows/track.yml) (the workflow passes
-it through `env:`, so it cannot import the constant).
+it through `env:`, so it cannot import the constant). Also delete
+`data/status.json` if it exists — it is the previous order's shipped flag, and
+its presence would make the app treat the new order as already shipped too — and
+add a `schedule:` trigger back to `on:` in the workflow (removed when the
+previous order shipped, per [When it breaks](#when-it-breaks)) so the new order
+gets tracked automatically again:
+
+```yaml
+on:
+  schedule:
+    - cron: "0 7 * * *" # 07:00 UTC daily
+  workflow_dispatch: {}
+```
 
 ## Running locally
 

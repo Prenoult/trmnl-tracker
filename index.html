@@ -25,6 +25,7 @@
     <p class="order-label">Commande #<span id="order-number">…</span></p>
   </header>
 
+  <p class="shipped-banner" id="shipped-banner" role="status" hidden></p>
   <p class="stale-banner" id="stale-banner" role="status" hidden></p>
 
   <!-- One block for the present: the rank, what moved since the last relevé, and
@@ -77,7 +78,7 @@
     </div>
   </section>
 
-  <section class="eta">
+  <section class="eta" id="eta-section">
     <span class="eta-label">Expédition estimée</span>
     <span class="eta-value" id="eta-date">–</span>
     <details class="eta-calendar" id="eta-calendar" hidden>
