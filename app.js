@@ -10,6 +10,7 @@ import {
   movement,
   shippingEstimate,
   historicalRate,
+  journeySummary,
 } from "./lib/domain.js";
 import { buildChartModel } from "./lib/chart-model.js";
 import { buildQueueModel } from "./lib/queue-model.js";
@@ -91,22 +92,54 @@ function renderStale(history, today) {
   el.hidden = false;
 }
 
-// Once shipped, "expédition estimée" has nothing left to estimate: showing it
-// would answer a question that no longer applies. The rest of the page — queue
-// lane, chart, table — stays as the historical record of the wait.
-function renderShipped(status) {
+// Once shipped, "expédition estimée" has nothing left to estimate — the
+// question it answered is settled. Rather than hide the card, this repurposes
+// the same slot (and the pace badge below it) into a closing summary: the date,
+// how long the wait ran, and the two whole-series figures nothing else on the
+// page states outright (the starting position, and the total ground covered).
+// The queue lane, chart and table are left alone: they are already the
+// historical record of the wait, unaltered by how it ended.
+function renderShipped(history, status) {
   const banner = document.getElementById("shipped-banner");
   const etaSection = document.getElementById("eta-section");
+  const labelEl = document.getElementById("eta-label");
+  const dateEl = document.getElementById("eta-date");
+  const subEl = document.getElementById("eta-sub");
+  const paceEl = document.getElementById("eta-pace");
+  const badgeEl = document.getElementById("eta-pace-badge");
+  const detailEl = document.getElementById("eta-pace-detail");
+  const calendarEl = document.getElementById("eta-calendar");
+
   if (!status) {
     banner.hidden = true;
     etaSection.hidden = false;
+    labelEl.textContent = "Expédition estimée";
     return;
   }
-  banner.textContent =
-    `Commande expédiée le ${longDateFmt.format(parseDay(status.shippedDate))}. ` +
-    `Le suivi de la file d'attente est terminé.`;
+
+  banner.textContent = "Commande expédiée : le suivi de la file d'attente est terminé.";
   banner.hidden = false;
-  etaSection.hidden = true;
+  etaSection.hidden = false;
+  calendarEl.hidden = true;
+
+  const summary = journeySummary(history, status.shippedDate);
+
+  labelEl.textContent = "Suivi terminé";
+  dateEl.textContent = longDateFmt.format(parseDay(status.shippedDate));
+  subEl.textContent =
+    `En ${fmt.format(summary.days)} jour${plural(summary.days)} de suivi, ` +
+    `à une moyenne de ${rateFmt.format(summary.rate)} place${plural(summary.rate)}/jour.`;
+
+  paceEl.hidden = false;
+  // Re-uses the pace badge's "good news" styling (faster/green) rather than the
+  // faster-vs-slower judgement it makes while the queue is still moving: there
+  // is no "than usual" left to compare against once the run is over, only the
+  // fact that ground was covered.
+  badgeEl.className = "eta-pace-badge faster";
+  badgeEl.textContent =
+    `${fmt.format(summary.gained)} place${plural(summary.gained)} gagnée${plural(summary.gained)} au total`;
+  detailEl.textContent =
+    `position de départ : #${fmt.format(summary.startPosition)} sur ${fmt.format(summary.startTotal)} commandes`;
 }
 
 function renderEta(history, today) {
@@ -387,10 +420,10 @@ function barStrip(model) {
     </svg>`;
 }
 
-function renderChart(history) {
+function renderChart(history, shipped = false) {
   const el = document.getElementById("chart");
   const tableWrap = document.getElementById("chart-data");
-  const model = buildChartModel(history);
+  const model = buildChartModel(history, { shipped });
 
   if (!model) {
     el.innerHTML = '<p class="empty-state">Revenez demain pour voir la courbe de progression.</p>';
@@ -476,7 +509,7 @@ function renderChart(history) {
       ${dots}
       <line class="chart-crosshair" y1="${top}" y2="${top + plotH}" />
       <circle class="chart-cursor" r="4.5" />
-      <circle class="chart-end" cx="${end.x.toFixed(1)}" cy="${end.y.toFixed(1)}" r="4.5" />
+      <circle class="chart-end${shipped ? " is-shipped" : ""}" cx="${end.x.toFixed(1)}" cy="${end.y.toFixed(1)}" r="4.5" />
       <text class="chart-end-label" x="${end.labelX.toFixed(1)}" y="${end.labelY.toFixed(1)}" text-anchor="${end.labelLeft ? "end" : "start"}">#${fmt.format(end.position)}</text>
       ${dateLabels}
       <rect class="chart-hit" x="${left}" y="${top}" width="${plotW}" height="${plotH}" />
@@ -677,7 +710,7 @@ async function main() {
   // sides — and computed once here rather than wherever each renderer needs it,
   // so nothing on the page can disagree with anything else about what day it is.
   const today = new Date().toISOString().slice(0, 10);
-  renderShipped(status);
+  renderShipped(history, status);
   // The staleness banner exists to flag a failed daily run; once shipped there is
   // no daily run any more, and "last snapshot N days ago" would read as an alarm
   // over nothing.
@@ -705,10 +738,10 @@ async function main() {
   for (const el of document.querySelectorAll(".delta-since")) el.textContent = sinceLabel;
 
   renderQueue(history);
-  // renderShipped already hid the section; skip the estimate itself too, since
-  // there is nothing left to estimate once the order has shipped.
+  // renderShipped already filled the card with the closing summary; skip the
+  // live estimate, since there is nothing left to project once shipped.
   if (!status) renderEta(history, today);
-  renderChart(history);
+  renderChart(history, Boolean(status));
 
   const totalNetAdded = history
     .slice(1)

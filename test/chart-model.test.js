@@ -181,6 +181,20 @@ describe("buildChartModel", () => {
       ]);
       expect(model.projection).toBeNull();
     });
+
+    // Once shipped the outcome is known, and a dashed line still guessing at it
+    // would be stale, not a forecast — { shipped: true } is how the caller says
+    // "don't project" even though the queue was still moving fast enough to
+    // support one.
+    it("is suppressed when shipped, and the data keeps the full axis width", () => {
+      const withProjection = buildChartModel(nearlyThere);
+      expect(withProjection.projection).not.toBeNull();
+
+      const model = buildChartModel(nearlyThere, { shipped: true });
+      expect(model.projection).toBeNull();
+      const drawn = model.points[model.points.length - 1].x - model.points[0].x;
+      expect(drawn).toBeCloseTo(model.geom.plotW, 6);
+    });
   });
 
   describe("queue size, the second series", () => {

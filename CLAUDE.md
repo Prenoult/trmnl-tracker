@@ -50,8 +50,8 @@ index.html → app.js ──────────┘  lib/history.js (parseHi
 | File | Responsibility |
 | --- | --- |
 | `lib/config.js` | `ORDER_NUMBER`, `RATE_WINDOW_DAYS`, `STALE_AFTER_DAYS` |
-| `lib/domain.js` | queue arithmetic: `movement`, `shippingEstimate`, `historicalRate`, `paceSeries`, UTC day maths. Pure — no DOM, no I/O, no formatting |
-| `lib/chart-model.js` | `buildChartModel` returns plain numbers; `app.js` is a template over them |
+| `lib/domain.js` | queue arithmetic: `movement`, `shippingEstimate`, `historicalRate`, `paceSeries`, `journeySummary` (the shipped-order closing figures), UTC day maths. Pure — no DOM, no I/O, no formatting |
+| `lib/chart-model.js` | `buildChartModel(history, { shipped })` returns plain numbers; `app.js` is a template over them. `shipped: true` suppresses the forecast projection |
 | `lib/queue-model.js` | `buildQueueModel`: the queue lane (comb, marker, travel trail) as numbers |
 | `lib/calendar-model.js` | `buildCalendarModel`: the ETA's month grid (day cells, target, range band) as data |
 | `lib/history.js` | everything that may read or write `history.json`: `parseHistory`, `validateSnapshot`, `upsertSnapshot`, `staleness` |
@@ -119,6 +119,16 @@ in `.github/workflows/track.yml` (the workflow cannot import the constant).
 
 **No `innerHTML` for scraped or computed values in interactive paths.** The hover
 readout and the table build cells with `textContent`; keep it that way.
+
+**A shipped order stops projecting, never stops recording.** `shippingEstimate`
+and `historicalRate` both forecast from a still-moving queue; `journeySummary`
+answers a different question — what a *finished* run added up to — and is the
+one to reach for once `status.json` exists, not a special case of the other
+two. Likewise `buildChartModel(history, { shipped: true })` is what suppresses
+the now-stale dashed projection; a new call site that forgets the flag will
+draw a forecast next to a curve that has already arrived. Neither one touches
+`history.json` or the queue lane, which stay exactly as recorded — see
+README's "When an order ships".
 
 ## Tests
 

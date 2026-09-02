@@ -26,9 +26,10 @@ and progress.
   through
   the same `parseHistory` gate the scraper writes through, so an HTTP error page
   or a half-written file says so instead of rendering `NaN` on every card. Once
-  `data/status.json` exists it shows a "commande expédiée" banner instead of the
-  shipping estimate, and leaves the rest of the page as the historical record of
-  the wait.
+  `data/status.json` exists, the shipping-estimate card becomes a closing summary
+  instead (shipped date, days tracked, whole-series pace, starting position), the
+  chart drops its now-stale forecast, and the queue lane, curve and table stay
+  exactly as recorded — see [When an order ships](#when-an-order-ships).
 
 No server to run: everything is static and can be hosted for free on GitHub
 Pages.
@@ -155,6 +156,48 @@ tested without a browser:
 | [`lib/status.js`](lib/status.js) | validates `status.json`, the one-shot shipped flag |
 | [`lib/tracker.js`](lib/tracker.js) | the four requests and regexes that talk to trmnl.com |
 | [`lib/config.js`](lib/config.js) | order number and tuning constants |
+
+## When an order ships
+
+`shippingEstimate` and `historicalRate` both look forward from a queue that is
+still moving — a rolling fit, a regression, a range of uncertainty around a
+guess. Once `data/status.json` exists there is nothing left to guess: the
+outcome is known, and the page stops asking "when" and states "what happened",
+without touching the historical record underneath it.
+
+- **The shipping-estimate card becomes a closing summary.** Same slot, same
+  card — "Expédition estimée" becomes "Suivi terminé", and the big value is the
+  real shipped date instead of a projected one. Underneath, `journeySummary` in
+  [`lib/domain.js`](lib/domain.js) reports the two whole-series figures nothing
+  else on the page states outright: how many days the order spent in the queue
+  from the first relevé to the real shipped date, and its overall average pace
+  over that span (simpler than `historicalRate`'s regression, and available
+  from two snapshots rather than needing more than `RATE_WINDOW_DAYS + 1` of
+  them — the summary should not go blank just because the order shipped early
+  in a short-lived tracker). The pace badge below it, which otherwise judges the
+  current rate against the historical one, instead states the two figures a
+  finished run is actually worth reading: the starting position, and the total
+  ground covered to get from there to the front.
+- **The chart drops its projection.** `buildChartModel(history, { shipped:
+  true })` skips the dashed forecast line entirely — it was a guess at where
+  the curve was going, and next to a curve that has already arrived, a stale
+  guess reads as the app not having noticed. The position and queue-size lines,
+  and the gains strip under them, are untouched: how the wait actually went
+  never stops being true. The final point on the curve is marked in the same
+  `--good` green as the summary card's badge and the top banner, so the three
+  read as one signal instead of three unrelated shades of it.
+- **The queue lane, unchanged.** It already draws the *last recorded* position,
+  not a live one, so a shipped order simply freezes there — the frame the
+  order was in when it left the queue for good.
+- **The top banner** is the one genuinely new element: a short, `--good`-toned
+  strip above everything else, because a reader who has to scroll to the
+  ETA card to learn their order shipped has been kept waiting for the news
+  the page exists to deliver.
+
+None of this touches `history.json`: its last entry stays exactly what it was
+on the order's last day in the queue, for the same reason the queue lane does
+— it is what the wait actually looked like, not a value to keep updating after
+there is nothing left to record.
 
 ## Deployment (5 minutes)
 

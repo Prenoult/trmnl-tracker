@@ -619,6 +619,10 @@ header h1 {
    legible where they sit on the line. */
 .chart-dot { fill: var(--accent); stroke: var(--surface); stroke-width: 1.5; }
 .chart-end { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+/* The one point on the curve that is not "latest so far" but "the end of it" —
+   same --good used by the shipped banner and the closing summary's badge, so
+   the three read as one signal rather than three unrelated shades of green. */
+.chart-end.is-shipped { fill: var(--good); }
 
 /* The end value is text, so it wears an ink token; the dot beside it carries
    the series colour. */
