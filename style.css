@@ -211,6 +211,12 @@ header h1 {
   letter-spacing: 0.06em;
 }
 
+/* The one end label that turns out to have been a destination. */
+.queue-ends #queue-end-shipping.is-shipped {
+  color: var(--good);
+  font-weight: 700;
+}
+
 .queue-lane {
   display: block;
   width: 100%;
@@ -272,6 +278,17 @@ header h1 {
 /* Losing ground is rare and worth seeing, same call as the gains strip. */
 .q-travel.is-loss .q-trail,
 .q-travel.is-loss .q-trail-head { stroke: var(--bad); }
+
+/* The finish line, in the same --good used by the top banner, the closing
+   summary's badge and the chart's own end point — one signal, reused instead
+   of invented again for the one part of the drawing where it matters most:
+   the marker that has actually crossed it. */
+.q-travel.is-shipped .q-trail,
+.q-travel.is-shipped .q-trail-head { stroke: var(--good); }
+.q-marker.is-shipped .q-marker-glow { fill: var(--good); }
+.q-marker.is-shipped .q-marker-bar,
+.q-marker.is-shipped .q-chip,
+.q-marker.is-shipped .q-chip-tip { fill: var(--good); }
 
 .q-trail-label {
   fill: var(--text-dim);
@@ -619,6 +636,10 @@ header h1 {
    legible where they sit on the line. */
 .chart-dot { fill: var(--accent); stroke: var(--surface); stroke-width: 1.5; }
 .chart-end { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+/* The one point on the curve that is not "latest so far" but "the end of it" —
+   same --good used by the shipped banner and the closing summary's badge, so
+   the three read as one signal rather than three unrelated shades of green. */
+.chart-end.is-shipped { fill: var(--good); }
 
 /* The end value is text, so it wears an ink token; the dot beside it carries
    the series colour. */

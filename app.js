@@ -10,6 +10,7 @@ import {
   movement,
   shippingEstimate,
   historicalRate,
+  journeySummary,
 } from "./lib/domain.js";
 import { buildChartModel } from "./lib/chart-model.js";
 import { buildQueueModel } from "./lib/queue-model.js";
@@ -91,22 +92,54 @@ function renderStale(history, today) {
   el.hidden = false;
 }
 
-// Once shipped, "expédition estimée" has nothing left to estimate: showing it
-// would answer a question that no longer applies. The rest of the page — queue
-// lane, chart, table — stays as the historical record of the wait.
-function renderShipped(status) {
+// Once shipped, "expédition estimée" has nothing left to estimate — the
+// question it answered is settled. Rather than hide the card, this repurposes
+// the same slot (and the pace badge below it) into a closing summary: the date,
+// how long the wait ran, and the two whole-series figures nothing else on the
+// page states outright (the starting position, and the total ground covered).
+// The queue lane, chart and table are left alone: they are already the
+// historical record of the wait, unaltered by how it ended.
+function renderShipped(history, status) {
   const banner = document.getElementById("shipped-banner");
   const etaSection = document.getElementById("eta-section");
+  const labelEl = document.getElementById("eta-label");
+  const dateEl = document.getElementById("eta-date");
+  const subEl = document.getElementById("eta-sub");
+  const paceEl = document.getElementById("eta-pace");
+  const badgeEl = document.getElementById("eta-pace-badge");
+  const detailEl = document.getElementById("eta-pace-detail");
+  const calendarEl = document.getElementById("eta-calendar");
+
   if (!status) {
     banner.hidden = true;
     etaSection.hidden = false;
+    labelEl.textContent = "Expédition estimée";
     return;
   }
-  banner.textContent =
-    `Commande expédiée le ${longDateFmt.format(parseDay(status.shippedDate))}. ` +
-    `Le suivi de la file d'attente est terminé.`;
+
+  banner.textContent = "Commande expédiée : le suivi de la file d'attente est terminé.";
   banner.hidden = false;
-  etaSection.hidden = true;
+  etaSection.hidden = false;
+  calendarEl.hidden = true;
+
+  const summary = journeySummary(history, status.shippedDate);
+
+  labelEl.textContent = "Suivi terminé";
+  dateEl.textContent = longDateFmt.format(parseDay(status.shippedDate));
+  subEl.textContent =
+    `En ${fmt.format(summary.days)} jour${plural(summary.days)} de suivi, ` +
+    `à une moyenne de ${rateFmt.format(summary.rate)} place${plural(summary.rate)}/jour.`;
+
+  paceEl.hidden = false;
+  // Re-uses the pace badge's "good news" styling (faster/green) rather than the
+  // faster-vs-slower judgement it makes while the queue is still moving: there
+  // is no "than usual" left to compare against once the run is over, only the
+  // fact that ground was covered.
+  badgeEl.className = "eta-pace-badge faster";
+  badgeEl.textContent =
+    `${fmt.format(summary.gained)} place${plural(summary.gained)} gagnée${plural(summary.gained)} au total`;
+  detailEl.textContent =
+    `position de départ : #${fmt.format(summary.startPosition)} sur ${fmt.format(summary.startTotal)} commandes`;
 }
 
 function renderEta(history, today) {
@@ -245,12 +278,20 @@ function spread(range) {
 // The queue, drawn as one lane: rank 1 at the left, where orders ship, the back
 // of the queue at the right, and the tracked order marked on it. The comb ahead
 // of the marker is the wait — it is the only part of the drawing that carries the
-// accent, because it is the only part that has to go away.
-function renderQueue(history) {
+// accent, because it is the only part that has to go away. Once shipped, that
+// wait is over: buildQueueModel's shipped mode draws the marker at the door
+// instead of back where it was last recorded, so the lane itself shows the
+// finish line being crossed rather than reading as just another day's snapshot.
+function renderQueue(history, status) {
   const figure = document.getElementById("queue-figure");
   const el = document.getElementById("queue");
   const latest = history[history.length - 1];
-  const model = buildQueueModel(latest, history.length > 1 ? history[0] : null);
+  const shipped = Boolean(status);
+  const gained = shipped ? journeySummary(history, status.shippedDate).gained : null;
+  const model = buildQueueModel(latest, history.length > 1 ? history[0] : null, {
+    shipped,
+    gained,
+  });
 
   // A snapshot the model refuses (a queue of zero) leaves nothing to draw: hide
   // the figure rather than ship an empty lane with two dashes under it. The
@@ -260,6 +301,9 @@ function renderQueue(history) {
     return;
   }
   figure.hidden = false;
+  document
+    .getElementById("queue-end-shipping")
+    .classList.toggle("is-shipped", shipped);
 
   const { geom, marker, trail, start, beam } = model;
   const { w, h, left, laneTop, laneH } = geom;
@@ -285,9 +329,13 @@ function renderQueue(history) {
 
   const travel = trail ? (start.x - marker.x).toFixed(2) : "0";
 
+  const ariaLabel = shipped
+    ? `Commande expédiée : elle a dépassé les ${fmt.format(model.behind)} commandes qui la suivaient encore dans la file.`
+    : `Vous êtes à la place ${fmt.format(model.position)} sur ${fmt.format(model.total)} commandes : ${fmt.format(model.ahead)} devant vous, ${fmt.format(model.behind)} derrière.`;
+
   el.innerHTML = `
     <svg class="queue-lane" viewBox="0 0 ${w} ${h}" role="img"
-      aria-label="Vous êtes à la place ${fmt.format(model.position)} sur ${fmt.format(model.total)} commandes : ${fmt.format(model.ahead)} devant vous, ${fmt.format(model.behind)} derrière.">
+      aria-label="${ariaLabel}">
       <defs>
         <linearGradient id="queue-beam" gradientUnits="userSpaceOnUse"
           x1="${beam.from}" y1="0" x2="${beam.to.toFixed(2)}" y2="0">
@@ -301,14 +349,14 @@ function renderQueue(history) {
       ${start ? `<line class="q-ghost" x1="${start.x.toFixed(2)}" y1="${start.top}" x2="${start.x.toFixed(2)}" y2="${start.bottom}" />` : ""}
       ${
         trail
-          ? `<g class="q-travel${trail.gained < 0 ? " is-loss" : ""}" style="--q-len:${trail.width.toFixed(2)}px; --q-dir:${trail.direction}">
+          ? `<g class="q-travel${trail.gained < 0 ? " is-loss" : ""}${shipped ? " is-shipped" : ""}" style="--q-len:${trail.width.toFixed(2)}px; --q-dir:${trail.direction}">
               <path class="q-trail" d="M${trail.from.toFixed(2)},${trail.y} H${trail.to.toFixed(2)}" />
               ${head}
-              <text class="q-trail-label" x="${trail.labelX.toFixed(2)}" y="${trail.labelY}" text-anchor="middle">${fmt.format(Math.abs(trail.gained))} ${direction(trail.gained, places.up, places.down)}</text>
+              <text class="q-trail-label" x="${trail.labelX.toFixed(2)}" y="${trail.labelY}" text-anchor="middle">${fmt.format(Math.abs(trail.gained))} ${direction(trail.gained, places.up, places.down)}${shipped ? " — expédiée" : ""}</text>
             </g>`
           : ""
       }
-      <g class="q-marker" style="--q-travel:${travel}px">
+      <g class="q-marker${shipped ? " is-shipped" : ""}" style="--q-travel:${travel}px">
         <rect class="q-marker-glow" x="${(marker.x - 6).toFixed(2)}" y="${marker.top}" width="12" height="${marker.bottom - marker.top}" rx="6" />
         <rect class="q-marker-bar" x="${(marker.x - 1.75).toFixed(2)}" y="${marker.top}" width="3.5" height="${marker.bottom - marker.top}" rx="1.75" />
         <path class="q-chip-tip" d="M${(marker.chipTipX - 5.5).toFixed(2)},${marker.chipTipY - 1} L${(marker.chipTipX + 5.5).toFixed(2)},${marker.chipTipY - 1} L${marker.chipTipX.toFixed(2)},${marker.chipTipY + 6} Z" />
@@ -329,6 +377,16 @@ function renderQueue(history) {
       ? "1 trait = 1 commande."
       : `1 trait ≈ ${fmt.format(Math.round(model.perTick))} commandes.`,
   ];
+  // Everything else on the lane already shows the crossing — the marker at the
+  // door, the whole comb greyed, the trail running there — but the drawing
+  // alone still needs a sentence to name what it is a drawing of, for the same
+  // reason the caption spells out what one tick is worth: nothing on this card
+  // is meant to be read off the shapes alone.
+  if (shipped) {
+    caption.push(
+      `Ligne d'arrivée franchie : les ${fmt.format(model.behind)} commandes encore dans la file au moment de l'expédition sont désormais toutes derrière elle.`
+    );
+  }
   if (trail) {
     // The unabbreviated month: "23 juil." already ends in a period, and the
     // sentence's own full stop lands right behind it.
@@ -387,10 +445,10 @@ function barStrip(model) {
     </svg>`;
 }
 
-function renderChart(history) {
+function renderChart(history, shipped = false) {
   const el = document.getElementById("chart");
   const tableWrap = document.getElementById("chart-data");
-  const model = buildChartModel(history);
+  const model = buildChartModel(history, { shipped });
 
   if (!model) {
     el.innerHTML = '<p class="empty-state">Revenez demain pour voir la courbe de progression.</p>';
@@ -476,7 +534,7 @@ function renderChart(history) {
       ${dots}
       <line class="chart-crosshair" y1="${top}" y2="${top + plotH}" />
       <circle class="chart-cursor" r="4.5" />
-      <circle class="chart-end" cx="${end.x.toFixed(1)}" cy="${end.y.toFixed(1)}" r="4.5" />
+      <circle class="chart-end${shipped ? " is-shipped" : ""}" cx="${end.x.toFixed(1)}" cy="${end.y.toFixed(1)}" r="4.5" />
       <text class="chart-end-label" x="${end.labelX.toFixed(1)}" y="${end.labelY.toFixed(1)}" text-anchor="${end.labelLeft ? "end" : "start"}">#${fmt.format(end.position)}</text>
       ${dateLabels}
       <rect class="chart-hit" x="${left}" y="${top}" width="${plotW}" height="${plotH}" />
@@ -677,7 +735,7 @@ async function main() {
   // sides — and computed once here rather than wherever each renderer needs it,
   // so nothing on the page can disagree with anything else about what day it is.
   const today = new Date().toISOString().slice(0, 10);
-  renderShipped(status);
+  renderShipped(history, status);
   // The staleness banner exists to flag a failed daily run; once shipped there is
   // no daily run any more, and "last snapshot N days ago" would read as an alarm
   // over nothing.
@@ -704,11 +762,11 @@ async function main() {
       : `depuis le ${dateFmt.format(parseDay(previous.date))}`;
   for (const el of document.querySelectorAll(".delta-since")) el.textContent = sinceLabel;
 
-  renderQueue(history);
-  // renderShipped already hid the section; skip the estimate itself too, since
-  // there is nothing left to estimate once the order has shipped.
+  renderQueue(history, status);
+  // renderShipped already filled the card with the closing summary; skip the
+  // live estimate, since there is nothing left to project once shipped.
   if (!status) renderEta(history, today);
-  renderChart(history);
+  renderChart(history, Boolean(status));
 
   const totalNetAdded = history
     .slice(1)

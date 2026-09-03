@@ -217,5 +217,54 @@ describe("buildQueueModel", () => {
         expect(nonFinite(buildQueueModel(now, then))).toEqual([]);
       });
     }
+
+    it("shipped, with and without a trail", () => {
+      expect(nonFinite(buildQueueModel(latest, first, { shipped: true }))).toEqual([]);
+      expect(nonFinite(buildQueueModel(latest, null, { shipped: true }))).toEqual([]);
+    });
+  });
+
+  // By FIFO, nothing is ahead of an order once it has shipped: every order that
+  // was ever ahead of it shipped first. The drawing says so by moving the marker
+  // to the door instead of leaving it back where it was last recorded.
+  describe("shipped mode", () => {
+    it("draws the marker at the door, not at its last recorded rank", () => {
+      const model = buildQueueModel(latest, first, { shipped: true });
+      expect(model.marker.x).toBe(QUEUE.left);
+      expect(model.ahead).toBe(0);
+      // The last real numbers are still there — only the drawing moved.
+      expect(model.position).toBe(latest.position);
+      expect(model.behind).toBe(model.total - latest.position);
+    });
+
+    it("turns the whole comb into travelled ground, none of it still owed", () => {
+      const model = buildQueueModel(latest, first, { shipped: true });
+      expect(model.ticks.some((t) => t.ahead)).toBe(false);
+    });
+
+    it("trails from the first relevé all the way to the door", () => {
+      const model = buildQueueModel(latest, first, { shipped: true });
+      expect(model.trail.to === QUEUE.left || model.trail.from === QUEUE.left).toBe(true);
+      expect(model.trail.direction).toBe(-1);
+    });
+
+    it("labels the trail with the caller's whole-series figure instead of the last leg alone", () => {
+      // startRank (1417) − position (1114) understates the ground actually
+      // covered on the unmeasured final stretch to the door — the caller's
+      // real total (from journeySummary) is what the label should show.
+      const model = buildQueueModel(latest, first, { shipped: true, gained: 1417 });
+      expect(model.trail.gained).toBe(1417);
+    });
+
+    it("falls back to startRank − position when the caller gives no figure", () => {
+      const model = buildQueueModel(latest, first, { shipped: true });
+      expect(model.trail.gained).toBe(first.position - latest.position);
+    });
+
+    it("has no trail to draw when there is nothing to draw one from", () => {
+      const model = buildQueueModel(latest, null, { shipped: true });
+      expect(model.trail).toBeNull();
+      expect(model.marker.x).toBe(QUEUE.left);
+    });
   });
 });

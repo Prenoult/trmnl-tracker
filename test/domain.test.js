@@ -9,6 +9,7 @@ import {
   addDays,
   daysBetween,
   historicalRate,
+  journeySummary,
   movement,
   paceSeries,
   parseDay,
@@ -356,5 +357,35 @@ describe("paceSeries", () => {
     expect(pace[0]).toBeNull();
     expect(pace[1]).toBeNull();
     expect(pace[2]).not.toBeNull();
+  });
+});
+
+describe("journeySummary", () => {
+  it("reports the whole-series figures for a finished run", () => {
+    const history = [day("2026-07-01", 1417, 1523), day("2026-07-11", 345, 1152)];
+    expect(journeySummary(history, "2026-07-13")).toEqual({
+      days: 12, // to the real shipped date, not just the last snapshot
+      startPosition: 1417,
+      startTotal: 1523,
+      gained: 1072,
+      rate: 1072 / 12,
+    });
+  });
+
+  it("falls back to the last snapshot's date when no shipped date is given", () => {
+    const history = [day("2026-07-01", 1417, 1523), day("2026-07-11", 345, 1152)];
+    expect(journeySummary(history, null).days).toBe(10);
+  });
+
+  it("floors the span at one day rather than dividing by zero", () => {
+    const history = [day("2026-07-01", 1417, 1523)];
+    const summary = journeySummary(history, "2026-07-01");
+    expect(summary.days).toBe(1);
+    expect(summary.gained).toBe(0);
+    expect(summary.rate).toBe(0);
+  });
+
+  it("returns null for an empty history", () => {
+    expect(journeySummary([], "2026-07-01")).toBeNull();
   });
 });
