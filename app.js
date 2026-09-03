@@ -278,12 +278,20 @@ function spread(range) {
 // The queue, drawn as one lane: rank 1 at the left, where orders ship, the back
 // of the queue at the right, and the tracked order marked on it. The comb ahead
 // of the marker is the wait — it is the only part of the drawing that carries the
-// accent, because it is the only part that has to go away.
-function renderQueue(history) {
+// accent, because it is the only part that has to go away. Once shipped, that
+// wait is over: buildQueueModel's shipped mode draws the marker at the door
+// instead of back where it was last recorded, so the lane itself shows the
+// finish line being crossed rather than reading as just another day's snapshot.
+function renderQueue(history, status) {
   const figure = document.getElementById("queue-figure");
   const el = document.getElementById("queue");
   const latest = history[history.length - 1];
-  const model = buildQueueModel(latest, history.length > 1 ? history[0] : null);
+  const shipped = Boolean(status);
+  const gained = shipped ? journeySummary(history, status.shippedDate).gained : null;
+  const model = buildQueueModel(latest, history.length > 1 ? history[0] : null, {
+    shipped,
+    gained,
+  });
 
   // A snapshot the model refuses (a queue of zero) leaves nothing to draw: hide
   // the figure rather than ship an empty lane with two dashes under it. The
@@ -293,6 +301,9 @@ function renderQueue(history) {
     return;
   }
   figure.hidden = false;
+  document
+    .getElementById("queue-end-shipping")
+    .classList.toggle("is-shipped", shipped);
 
   const { geom, marker, trail, start, beam } = model;
   const { w, h, left, laneTop, laneH } = geom;
@@ -318,9 +329,13 @@ function renderQueue(history) {
 
   const travel = trail ? (start.x - marker.x).toFixed(2) : "0";
 
+  const ariaLabel = shipped
+    ? `Commande expédiée : elle a dépassé les ${fmt.format(model.behind)} commandes qui la suivaient encore dans la file.`
+    : `Vous êtes à la place ${fmt.format(model.position)} sur ${fmt.format(model.total)} commandes : ${fmt.format(model.ahead)} devant vous, ${fmt.format(model.behind)} derrière.`;
+
   el.innerHTML = `
     <svg class="queue-lane" viewBox="0 0 ${w} ${h}" role="img"
-      aria-label="Vous êtes à la place ${fmt.format(model.position)} sur ${fmt.format(model.total)} commandes : ${fmt.format(model.ahead)} devant vous, ${fmt.format(model.behind)} derrière.">
+      aria-label="${ariaLabel}">
       <defs>
         <linearGradient id="queue-beam" gradientUnits="userSpaceOnUse"
           x1="${beam.from}" y1="0" x2="${beam.to.toFixed(2)}" y2="0">
@@ -334,14 +349,14 @@ function renderQueue(history) {
       ${start ? `<line class="q-ghost" x1="${start.x.toFixed(2)}" y1="${start.top}" x2="${start.x.toFixed(2)}" y2="${start.bottom}" />` : ""}
       ${
         trail
-          ? `<g class="q-travel${trail.gained < 0 ? " is-loss" : ""}" style="--q-len:${trail.width.toFixed(2)}px; --q-dir:${trail.direction}">
+          ? `<g class="q-travel${trail.gained < 0 ? " is-loss" : ""}${shipped ? " is-shipped" : ""}" style="--q-len:${trail.width.toFixed(2)}px; --q-dir:${trail.direction}">
               <path class="q-trail" d="M${trail.from.toFixed(2)},${trail.y} H${trail.to.toFixed(2)}" />
               ${head}
-              <text class="q-trail-label" x="${trail.labelX.toFixed(2)}" y="${trail.labelY}" text-anchor="middle">${fmt.format(Math.abs(trail.gained))} ${direction(trail.gained, places.up, places.down)}</text>
+              <text class="q-trail-label" x="${trail.labelX.toFixed(2)}" y="${trail.labelY}" text-anchor="middle">${fmt.format(Math.abs(trail.gained))} ${direction(trail.gained, places.up, places.down)}${shipped ? " — expédiée" : ""}</text>
             </g>`
           : ""
       }
-      <g class="q-marker" style="--q-travel:${travel}px">
+      <g class="q-marker${shipped ? " is-shipped" : ""}" style="--q-travel:${travel}px">
         <rect class="q-marker-glow" x="${(marker.x - 6).toFixed(2)}" y="${marker.top}" width="12" height="${marker.bottom - marker.top}" rx="6" />
         <rect class="q-marker-bar" x="${(marker.x - 1.75).toFixed(2)}" y="${marker.top}" width="3.5" height="${marker.bottom - marker.top}" rx="1.75" />
         <path class="q-chip-tip" d="M${(marker.chipTipX - 5.5).toFixed(2)},${marker.chipTipY - 1} L${(marker.chipTipX + 5.5).toFixed(2)},${marker.chipTipY - 1} L${marker.chipTipX.toFixed(2)},${marker.chipTipY + 6} Z" />
@@ -362,6 +377,16 @@ function renderQueue(history) {
       ? "1 trait = 1 commande."
       : `1 trait ≈ ${fmt.format(Math.round(model.perTick))} commandes.`,
   ];
+  // Everything else on the lane already shows the crossing — the marker at the
+  // door, the whole comb greyed, the trail running there — but the drawing
+  // alone still needs a sentence to name what it is a drawing of, for the same
+  // reason the caption spells out what one tick is worth: nothing on this card
+  // is meant to be read off the shapes alone.
+  if (shipped) {
+    caption.push(
+      `Ligne d'arrivée franchie : les ${fmt.format(model.behind)} commandes encore dans la file au moment de l'expédition sont désormais toutes derrière elle.`
+    );
+  }
   if (trail) {
     // The unabbreviated month: "23 juil." already ends in a period, and the
     // sentence's own full stop lands right behind it.
@@ -737,7 +762,7 @@ async function main() {
       : `depuis le ${dateFmt.format(parseDay(previous.date))}`;
   for (const el of document.querySelectorAll(".delta-since")) el.textContent = sinceLabel;
 
-  renderQueue(history);
+  renderQueue(history, status);
   // renderShipped already filled the card with the closing summary; skip the
   // live estimate, since there is nothing left to project once shipped.
   if (!status) renderEta(history, today);

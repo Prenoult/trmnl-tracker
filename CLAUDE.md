@@ -52,7 +52,7 @@ index.html → app.js ──────────┘  lib/history.js (parseHi
 | `lib/config.js` | `ORDER_NUMBER`, `RATE_WINDOW_DAYS`, `STALE_AFTER_DAYS` |
 | `lib/domain.js` | queue arithmetic: `movement`, `shippingEstimate`, `historicalRate`, `paceSeries`, `journeySummary` (the shipped-order closing figures), UTC day maths. Pure — no DOM, no I/O, no formatting |
 | `lib/chart-model.js` | `buildChartModel(history, { shipped })` returns plain numbers; `app.js` is a template over them. `shipped: true` suppresses the forecast projection |
-| `lib/queue-model.js` | `buildQueueModel`: the queue lane (comb, marker, travel trail) as numbers |
+| `lib/queue-model.js` | `buildQueueModel(latest, first, { shipped, gained })`: the queue lane (comb, marker, travel trail) as numbers. `shipped: true` draws the marker at the door (`ahead: 0`) instead of its last recorded rank |
 | `lib/calendar-model.js` | `buildCalendarModel`: the ETA's month grid (day cells, target, range band) as data |
 | `lib/history.js` | everything that may read or write `history.json`: `parseHistory`, `validateSnapshot`, `upsertSnapshot`, `staleness` |
 | `lib/status.js` | `parseStatus`: validates `status.json`, the one-shot shipped flag |
@@ -125,10 +125,14 @@ and `historicalRate` both forecast from a still-moving queue; `journeySummary`
 answers a different question — what a *finished* run added up to — and is the
 one to reach for once `status.json` exists, not a special case of the other
 two. Likewise `buildChartModel(history, { shipped: true })` is what suppresses
-the now-stale dashed projection; a new call site that forgets the flag will
-draw a forecast next to a curve that has already arrived. Neither one touches
-`history.json` or the queue lane, which stay exactly as recorded — see
-README's "When an order ships".
+the now-stale dashed projection, and `buildQueueModel(latest, first, {
+shipped: true, gained })` is what moves the marker to the door instead of its
+last recorded rank (by FIFO, `ahead` really is 0 once shipped — every order
+that was ever ahead shipped first). A new call site that forgets either flag
+draws a forecast next to a curve that has already arrived, or a marker parked
+mid-queue for an order that has already left it. None of the three touches
+`history.json`, which stays exactly as recorded — see README's "When an order
+ships".
 
 ## Tests
 

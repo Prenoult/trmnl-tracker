@@ -186,17 +186,26 @@ without touching the historical record underneath it.
   never stops being true. The final point on the curve is marked in the same
   `--good` green as the summary card's badge and the top banner, so the three
   read as one signal instead of three unrelated shades of it.
-- **The queue lane, unchanged.** It already draws the *last recorded* position,
-  not a live one, so a shipped order simply freezes there — the frame the
-  order was in when it left the queue for good.
+- **The queue lane draws the crossing, not just the last snapshot.**
+  `buildQueueModel(latest, first, { shipped: true, gained })` moves the marker
+  to the door instead of leaving it back at its last recorded rank: by FIFO, an
+  order that has shipped has nothing left ahead of it — every order that was
+  ever ahead shipped first — so "0 devant vous" is not a narrative trick, it is
+  what actually happened. Every tick in the comb switches from the wash that
+  means "still owed" to the grey that means "already behind", the travel trail
+  runs the whole distance from the first relevé to the door instead of just the
+  last leg, and the marker, trail and "← Expédition" label all pick up the same
+  `--good` green as the rest of the page. The underlying facts — `position`,
+  `total`, `behind` — are untouched: only where the marker is *drawn* changes,
+  the same trade the chart makes for its own end point.
 - **The top banner** is the one genuinely new element: a short, `--good`-toned
-  strip above everything else, because a reader who has to scroll to the
-  ETA card to learn their order shipped has been kept waiting for the news
-  the page exists to deliver.
+  strip above everything else, so the news the page exists to deliver is the
+  first thing read, not something inferred a few cards down.
 
 None of this touches `history.json`: its last entry stays exactly what it was
-on the order's last day in the queue, for the same reason the queue lane does
-— it is what the wait actually looked like, not a value to keep updating after
+on the order's last day in the queue — the queue lane's `position`/`total`
+still come straight from it, only the drawing built on top says the order has
+since crossed the line — not a value to keep updating after
 there is nothing left to record.
 
 ## Deployment (5 minutes)
